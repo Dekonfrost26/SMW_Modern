@@ -591,7 +591,7 @@ void BobOmbExplosion(uint8 k) {  // 02808a
 }
 
 void BobOmbExplosion_ExplodeSprites(uint8 k) {  // 028139
-  for (uint8 i = 9; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
     if (i != spr_current_slotid && SPR(spr_current_status, i) >= 8)
       BobOmbExplosion_ExplodeKillSpr(k, i);
   }
@@ -1092,7 +1092,7 @@ LABEL_7:
     break;
   }
   case 0x2C: {
-    for (uint8 i = 11; (i & 0x80) == 0; --i) {
+    for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
       if (SPR(spr_current_status, i) >= 8 && SPR(spr_spriteid, i) == 45)
         goto LABEL_46;
     }
@@ -1714,7 +1714,7 @@ void CheckPlayerAttackToNormalSpriteCollision(uint8 k) {  // 029398
 void CheckPlayerAttackToNormalSpriteColl_CapeSwingEntry(uint8 r14) {  // 0293ae
   uint8 j = sprites_currently_processed_misc_sprite;
 
-  for (uint8 i = 11; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
     spr_current_slotid = i;
     if (SPR(spr_current_status, i) != 11 && SPR(spr_current_status, i) >= 8 &&
         !(SPR(spr_decrementing_table1fe2, i) | SPR(spr_decrementing_table154c, i) | SPR(spr_table15d0, i) | SPR(spr_property_bits166e, i) & 0x20)) {
@@ -1785,7 +1785,7 @@ LABEL_11:
 void RunPlayerBlockCode_TriggerCapeDiveGroundPound() {  // 0294c1
   timer_shake_layer1 = 48;
   unusedram_7e14a9 = 0;
-  for (uint8 i = 9; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
     if (SPR(spr_current_status, i) >= 8 && (SPR(spr_table1588, i) & 4) != 0 &&
         !(SPR(spr_decrementing_table154c, i) | SPR(spr_table15d0, i) | SPR(spr_property_bits166e, i) & 0x20)) {
       CheckPlayerAttackToNormalSpriteColl_029404(i, 53);
@@ -2555,7 +2555,7 @@ void CheckPlayerFireballToNormalSpriteCollision(uint8 k) {  // 02a0ac
   if (((counter_global_frames ^ k) & 3) == 0) {
     uint8 v1 = k;
     misc_scratch7e185e = k;
-    for (uint8 i = 9; (i & 0x80) == 0; --i) {
+    for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
       spr_current_slotid = i;
       if (SPR(spr_current_status, i) >= 8 && ext_spr_table1779[v1] == (SPR(spr_table1632, i) | SPR(spr_table15d0, i) | SPR(spr_property_bits167a, i) & 2)) {
         CollInfo ci;
@@ -3947,7 +3947,7 @@ void Spr070_Pokey_Bank02SpriteEntry(uint8 k, uint8 j, uint8 a) {  // 02b7a7
 }
 
 void Spr070_Pokey_02B7AC(uint8 k) {  // 02b7ac
-  uint8 v1 = 9;
+  uint8 v1 = SprScanFirst9();
   while (1) {
     if (!((counter_global_frames ^ v1) & 1) && SPR(spr_current_status, v1) == 10) {
       CollInfo ci;
@@ -3956,7 +3956,7 @@ void Spr070_Pokey_02B7AC(uint8 k) {  // 02b7ac
       if (StandardSpriteToSpriteCollisionChecks_CheckContact(&ci))
         break;
     }
-    if ((--v1 & 0x80) != 0)
+    if (((v1 = SprScanNext9(v1)) & 0x80) != 0)
       return;
   }
   if (!SPR(spr_decrementing_table1558, k)) {
@@ -4093,7 +4093,7 @@ void UnusedGenTileFromSpr(uint8 k, uint8 a) {  // 02b9a4
 
 void CheckPlayerToNormalSpriteColl_TurnSpritesIntoSilverCoins() {  // 02b9bd
   counter_current_silver_coins = 2;
-  for (uint8 i = 9; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
     if (SPR(spr_current_status, i) >= 8 && (SPR(spr_property_bits190f, i) & 0x40) == 0)
       CheckPlayerToNormalSpriteColl_02B9D9(i);
   }
@@ -4121,7 +4121,7 @@ void CheckBerryTileCollisionWithYoshiTongue(CollInfo *ci) {  // 02b9fa
       blocks_currently_processed_map16_tile_lo = g_ram[r5];
       if (!g_ram[r5 + 0x10000] && blocks_currently_processed_map16_tile_lo >= 0x45 && blocks_currently_processed_map16_tile_lo < 0x48) {
         yoshi_berry_being_eaten = blocks_currently_processed_map16_tile_lo - 68;
-        uint8 j = 11;
+        uint8 j = SprNumSlots() - 1;
         while (SPR(spr_current_status, j)) {
           if ((--j & 0x80) != 0)
             return;
@@ -6046,9 +6046,9 @@ void Spr09B_HammerBro_Draw(uint8 k) {  // 02dafd
 void Spr09C_HammerBroPlatform(uint8 k) {  // 02db5c
   Spr09C_HammerBroPlatform_Draw(k);
   SPR(spr_table1594, k) = -1;
-  uint8 j = 9;
+  uint8 j = SprScanFirst9();
   while (SPR(spr_current_status, j) != 8 || SPR(spr_spriteid, j) != 0x9B) {
-    if ((--j & 0x80) != 0)
+    if (((j = SprScanNext9(j)) & 0x80) != 0)
       goto LABEL_7;
   }
   SPR(spr_table1594, k) = j;
@@ -6706,7 +6706,7 @@ void Spr052_MovingLedgeHole(uint8 k) {  // 02e5bc
 }
 
 void Spr052_MovingLedgeHole_02E5F7(uint8 k) {  // 02e5f7
-  for (uint8 i = 11; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
     if (i != k && ((counter_global_frames ^ i) & 3) == 0 && SPR(spr_current_status, i) >= 8) {
       uint8 v2 = SPR(spr_no_level_collision_flag, i);
       if (!v2 || v2 - 1 == k) {
@@ -7034,7 +7034,7 @@ void SetBabyYoshiDynamicGraphicsPointer(uint8 k) {  // 02ea25
 }
 
 void CheckIfBabyYoshiCanEatNormalSprite2(uint8 k) {  // 02ea4e
-  for (uint8 i = 11; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
     if (i != SPR(spr_table160e, k) && !((counter_global_frames ^ i) & 1) && i != spr_current_slotid) {
       sprites_second_tracked_sprite_index = i;
       if (SPR(spr_current_status, i) >= 8) {
@@ -7228,7 +7228,7 @@ void Spr061_SkullRaft(uint8 k) {  // 02edd8
       oam[64].ypos += 3;
     if (!flag_sprites_locked) {
       uint8 r0 = 0;
-      for (uint8 i = 9; (i & 0x80) == 0; --i) {
+      for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
         if (SPR(spr_current_status, i) && SPR(spr_spriteid, i) == 97 && (SPR(spr_table1588, i) & 0xF) != 0)
           r0 = SPR(spr_table1588, i) & 0xF;
       }
@@ -7251,7 +7251,7 @@ void Spr061_SkullRaft(uint8 k) {  // 02edd8
       }
     }
   } else {
-    for (uint8 j = 9; (j & 0x80) == 0; --j) {
+    for (uint8 j = SprScanFirst9(); (j & 0x80) == 0; j = SprScanNext9(j)) {
       if (SPR(spr_spriteid, j) == 97)
         SPR(spr_current_status, j) = 0;
     }
@@ -7654,9 +7654,9 @@ void Spr08C_SideExitAndFireplace_SmokeSpawn() {  // 02f53e
 }
 
 void Spr08C_SideExitAndFireplace_SmokeSpawn_CheckEmptySlot() {  // 02f548
-  uint8 j = 9;
+  uint8 j = SprScanFirst9();
   while (SPR(spr_current_status, j)) {
-    if ((--j & 0x80) != 0)
+    if (((j = SprScanNext9(j)) & 0x80) != 0)
       return;
   }
   SPR(spr_spriteid, j) = -117;

@@ -6470,7 +6470,7 @@ void Spr07B_GoalTape_TriggerGoalTape() {  // 00fa80
   timer_respawn_sprite = 0;
   gen_spr_spriteid = 0;
   counter_current_silver_coins = 0;
-  for (uint8 i = 11; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
     if (SPR(spr_current_status, i) >= 8) {
       if (SPR(spr_current_status, i) == 11) {
         Spr07B_GoalTape_LvlEndPowerUp(i);

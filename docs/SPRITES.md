@@ -1,4 +1,8 @@
-# More sprite slots: design
+# More sprite slots
+
+Status: implemented (steps 1-4 below). Enabled with `[Features] MoreSprites`
+(default on) or Options > Gameplay > Enemy Slots; changes apply at the next
+level load.
 
 Goal: raise the normal sprite slot count from 12 (slots 0-11) to 24. With
 the feature off, behaviour must stay identical to the original game: running
@@ -60,7 +64,7 @@ priority over the player. That's acceptable.
 Do not change the 11/9 loops that belong to minor extended sprites
 (`mextspr_*`, 12 slots) or extended sprites (10 slots).
 
-## Steps
+## Steps (all done)
 
 1. `SPR()` accessor rewrite with storage still 12 slots. Verify there are
    no differences against the ROM.
@@ -69,3 +73,7 @@ Do not change the 11/9 loops that belong to minor extended sprites
 3. Main loop, OAM page switch, spawning with the extra slots. Enable with
    `[Features] MoreSprites = 1` (off in VerifyAgainstRom mode).
 4. Widen the full and partial scan loops. Test busy levels.
+
+Deliberately left on the original slot layout: the bonus game, the coin game
+cloud, reserve item drops and bounce-block spawns that overwrite slots 10/11,
+and an unused Yoshi routine.

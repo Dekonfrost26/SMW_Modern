@@ -508,7 +508,7 @@ void Spr0C5_BigBooBoss_Dying(uint8 k) {  // 0381d3
 }
 
 void Spr0C5_BigBooBoss_0381E4(uint8 k) {  // 0381e4
-  uint8 j = 11;
+  uint8 j = SprNumSlots() - 1;
   CollInfo ci;
   while (1) {
     if (SPR(spr_current_status, j) == 9 || SPR(spr_current_status, j) == 10) {
@@ -740,9 +740,9 @@ void Spr0C1_WingedPlatform(uint8 k) {  // 0385f6
       if (!flag_active_fast_background_scroll_generator) {
         flag_active_fast_background_scroll_generator = 8;
         SPR(spr_table1602, k) = 127;
-        uint8 v2 = 9;
+        uint8 v2 = SprScanFirst9();
         while (v2 == spr_current_slotid || SPR(spr_spriteid, v2) != 0xC1) {
-          if ((--v2 & 0x80) != 0) {
+          if (((v2 = SprScanNext9(v2)) & 0x80) != 0) {
             ++v2;
             break;
           }
@@ -2611,7 +2611,7 @@ void Spr0A0_ActivateBowserBattle_03A6AC(uint8 k) {  // 03a6ac
 }
 
 void DespawnNonBossSprites() {  // 03a6c8
-  for (uint8 i = 9; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
     if (SPR(spr_current_status, i)) {
       uint8 v1 = SPR(spr_spriteid, i);
       if (v1 != 0xA9 && v1 != 41 && v1 != 0xA0 && v1 != 0xC5) {
@@ -3596,7 +3596,7 @@ void Spr0C8_LightSwitch(uint8 k) {  // 03c1f5
     if (SPR(spr_decrementing_table1558, k) == 5) {
       SPR(spr_table00c2, k) = 0;
       io_sound_ch1 = 11;
-      for (uint8 i = 9; (i & 0x80) == 0; --i) {
+      for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
         if (SPR(spr_current_status, i) == 8 && SPR(spr_spriteid, i) == 0xC6)
           SPR(spr_table00c2, i) ^= 1;
       }
@@ -3642,7 +3642,7 @@ void SprXXX_LineGuided_ChainsawDraw(uint8 k) {  // 03c26b
 }
 
 void TriggerHidden1up() {  // 03c2d9
-  uint8 j = 11;
+  uint8 j = SprNumSlots() - 1;
   while (SPR(spr_current_status, j)) {
     if ((--j & 0x80) != 0)
       return;
@@ -3762,7 +3762,7 @@ void Spr0C6_Spotlight_Draw(uint8 k) {  // 03c4a5
 
 void Spr0C6_Spotlight(uint8 k) {  // 03c4dc
   if (!SPR(spr_table1534, k)) {
-    for (uint8 i = 9; (i & 0x80) == 0; --i) {
+    for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
       if (i != spr_current_slotid && SPR(spr_current_status, i) == 8 && SPR(spr_spriteid, i) == 0xC6) {
         SPR(spr_current_status, k) = 0;
         return;

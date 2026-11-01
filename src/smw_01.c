@@ -1031,7 +1031,7 @@ void Spr03E_PSwitch_Init(uint8 k) {  // 01844e
 }
 
 void Spr01E_Lakitu_Init(uint8 k) {  // 01846b
-  for (uint8 i = 9; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
     if (i != spr_current_slotid && SPR(spr_current_status, i) == 8 && (SPR(spr_spriteid, i) == 0x87 || SPR(spr_spriteid, i) == 30)) {
       SubOffscreen_Bank01_EraseSprite(k);
       return;
@@ -1221,7 +1221,7 @@ void Spr052_MovingLedgeHole_Init(uint8 k) {  // 018890
 
 void SprXXX_Generic_JumpOverKickedObject(uint8 k) {  // 018898
   if (((counter_global_frames ^ k) & 3) == 0) {
-    uint8 v1 = 9;
+    uint8 v1 = SprScanFirst9();
     while (1) {
       if (SPR(spr_current_status, v1) == 10) {
         CollInfo ci;
@@ -1235,7 +1235,7 @@ void SprXXX_Generic_JumpOverKickedObject(uint8 k) {  // 018898
             break;
         }
       }
-      if ((--v1 & 0x80) != 0)
+      if (((v1 = SprScanNext9(v1)) & 0x80) != 0)
         return;
     }
     if (SPR(spr_table157c, v1) != SPR(spr_table157c, k)) {
@@ -4927,7 +4927,7 @@ void Spr020_Magic_01BD98(uint8 k) {  // 01bd98
 }
 
 void Spr01F_MagiKoopa_Init(uint8 k) {  // 01bdb8
-  for (uint8 i = 9; (i & 0x80) == 0; --i) {
+  for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
     if (i != spr_current_slotid && SPR(spr_current_status, i) && SPR(spr_spriteid, i) == 31) {
       SPR(spr_current_status, k) = 0;
       return;
@@ -5033,9 +5033,9 @@ void Spr01F_MagiKoopa_State03_FadeOut(uint8 k) {  // 01bf16
 }
 
 void Spr01F_MagiKoopa_01BF1D(uint8 k) {  // 01bf1d
-  uint8 j = 9;
+  uint8 j = SprScanFirst9();
   while (SPR(spr_current_status, j)) {
-    if ((--j & 0x80) != 0)
+    if (((j = SprScanNext9(j)) & 0x80) != 0)
       return;
   }
   io_sound_ch1 = 16;
@@ -5307,7 +5307,7 @@ LABEL_37:
       }
       break;
     case 0x7D:
-      for (uint8 i = 11; (i & 0x80) == 0; --i) {
+      for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
         if (SPR(spr_current_status, i) == 11 && SPR(spr_spriteid, i) != 125)
           SPR(spr_current_status, i) = 9;
       }
@@ -7169,7 +7169,7 @@ void Spr00E_Keyhole(uint8 k) {  // 01e1c8
   GetDrawInfoRes drt;
   uint8 i;
   CollInfo ci;
-  for (i = 11; (i & 0x80) == 0; --i) {
+  for (i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
     if (SPR(spr_current_status, i) >= 8 && SPR(spr_spriteid, i) == 0x80)
       break;
   }
@@ -7594,7 +7594,7 @@ LABEL_2:
     timer_respawn_sprite = -1;
     sprites_sprite_to_respawn = 30;
   } else {
-    for (uint8 i = 9; (i & 0x80) == 0; --i) {
+    for (uint8 i = SprScanFirst9(); (i & 0x80) == 0; i = SprScanNext9(i)) {
       if (SPR(spr_current_status, i) == 8 && SPR(spr_spriteid, i) == 30) {
         SPR(spr_table160e, k) = i;
         Spr087_LakituCloud_01E98D(k);
@@ -8374,7 +8374,7 @@ void Spr035_Yoshi_01F4B2(uint8 k, uint8 r13) {  // 01f4b2
     SetHiLo(&ci.r9, &ci.r1, GetSprYPos(k) + (uint8)(misc_scratch7e185e + 2));
     ci.r2 = 8;
     ci.r3 = 4;
-    for (uint8 i = 11; (i & 0x80) == 0; --i) {
+    for (uint8 i = SprNumSlots() - 1; (i & 0x80) == 0; --i) {
       sprites_second_tracked_sprite_index = i;
       if (i != spr_current_slotid && (SPR(spr_table160e, k) & 0x80) != 0 && SPR(spr_current_status, i) >= 8 && !SPR(spr_table1632, i)) {
         Spr035_Yoshi_TryEatSprite(k, i, &ci);
@@ -8429,7 +8429,7 @@ void Spr035_Yoshi_TryEatSprite(uint8 k, uint8 j, CollInfo *ci) {  // 01f58e
 
 void Spr035_Yoshi_01F622(uint8 k) {  // 01f622
   if (!(flag_sprites_locked | SPR(spr_decrementing_table163e, k))) {
-    uint8 v1 = 11;
+    uint8 v1 = SprNumSlots() - 1;
     do {
       sprites_second_tracked_sprite_index = v1;
       if (((counter_global_frames ^ v1) & 1) == 0 && v1 != SPR(spr_table160e, k) && v1 != spr_current_slotid && SPR(spr_current_status, v1) >= 8 &&

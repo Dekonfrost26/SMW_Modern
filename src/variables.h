@@ -13,6 +13,11 @@ static inline uint8 *SprSlotPtr(uint8 *base, int k) {
 enum { kSprSlotsOriginal = 12, kSprSlotsMax = 24 };
 // Number of normal sprite slots in use (12 originally).
 static inline int SprNumSlots(void) { return g_more_sprite_slots ? kSprSlotsMax : kSprSlotsOriginal; }
+// Slot scans the original does as "9 down to 0" (skipping slots 10 and 11,
+// which are reserved for items): with extra slots on, 23..12 come first.
+// With extra slots off this is exactly 9, 8, ..., 0.
+static inline uint8 SprScanFirst9(void) { return g_more_sprite_slots ? kSprSlotsMax - 1 : 9; }
+static inline uint8 SprScanNext9(uint8 i) { return i == kSprSlotsOriginal ? 9 : (uint8)(i - 1); }
 // Clears the RAM extension shadow of SNES RAM range [addr, addr + len).
 static inline void SprExtClear(uint32 addr, uint32 len) { memset(g_ram + kSnesRamSize + addr, 0, len); }
 #endif

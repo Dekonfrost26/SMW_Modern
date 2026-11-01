@@ -41,6 +41,7 @@ typedef struct GamepadInfo {
   uint16 last_cmd[kGamepadBtn_Count];
   Sint16 last_axis_x, last_axis_y;
   uint8 menu_triggers;  // trigger state while the options menu is open (bit0 = L2, bit1 = R2)
+  uint16 extra_buttons;  // controllers 3-4: SNES buttons held (12-bit joypad layout)
 } GamepadInfo;
 
 
@@ -92,7 +93,10 @@ static int g_snes_width, g_snes_height;
 static int g_sdl_audio_mixer_volume = SDL_MIX_MAXVOLUME;
 static struct RendererFuncs g_renderer_funcs;
 
-static GamepadInfo g_gamepad[2];
+enum { kMaxGamepads = 4 };  // 1-2 use the SNES joypads, 3-4 feed co-op players
+static GamepadInfo g_gamepad[kMaxGamepads];
+// SNES joypad bit for each SNES button command (Up, Down, ..., L, R)
+static const uint8 kKbdRemap[] = { 4, 5, 6, 7, 2, 3, 8, 0, 9, 1, 10, 11 };
 static bool g_running = true;
 static bool g_focus_paused;
 static int g_real_fps;
@@ -118,8 +122,10 @@ void Warning(const char *error) {
 }
 
 static GamepadInfo *GetGamepadInfo(SDL_JoystickID id) {
-  return (g_gamepad[0].joystick_id == id) ? &g_gamepad[0] :
-    (g_gamepad[1].joystick_id == id) ? &g_gamepad[1] : NULL;
+  for (int i = 0; i < kMaxGamepads; i++)
+    if (g_gamepad[i].joystick_id == id)
+      return &g_gamepad[i];
+  return NULL;
 }
 
 int Platform_GetMaxWindowScale(void) {
@@ -423,7 +429,8 @@ int main(int argc, char** argv) {
 
   LoadAssets();
 
-  g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
+  for (int i = 0; i < kMaxGamepads; i++)
+    g_gamepad[i].joystick_id = -1;
   if (g_config.extended_aspect_ratio > kPpuExtraLeftRight)
     g_config.extended_aspect_ratio = kPpuExtraLeftRight;
   g_snes_width = (g_config.extended_aspect_ratio * 2 + 256);
@@ -699,6 +706,8 @@ error_reading:;
     if (g_input_state & 0xf0000)
       g_gamepad[1].axis_buttons = 0;
     uint32 inputs = g_input_state | g_gamepad[0].axis_buttons | g_gamepad[1].axis_buttons << 12;
+    for (int i = 2; i < kMaxGamepads; i++)
+      g_coop_pad_input[i] = g_gamepad[i].joystick_id == -1 ? 0 : (g_gamepad[i].extra_buttons | g_gamepad[i].axis_buttons);
     uint8 is_replay = RtlRunFrame(inputs | GetActiveControllers());
 
     frameCtr++;
@@ -814,7 +823,6 @@ static void RenderNumber(uint8 *dst, size_t pitch, int n, uint8 big) {
 }
 
 static void HandleCommand(uint32 j, bool pressed) {
-  static const uint8 kKbdRemap[] = { 4, 5, 6, 7, 2, 3, 8, 0, 9, 1, 10, 11 };
   if (j < kKeys_Controls)
     return;
 
@@ -948,12 +956,13 @@ static void OpenOneGamepad(int i) {
     if (GetGamepadInfo(joystick_id))
       return;
 
-    uint8 scan_order[3] = { SDL_GameControllerGetPlayerIndex(controller), 0, 1 };
+    uint8 scan_order[1 + kMaxGamepads] = { SDL_GameControllerGetPlayerIndex(controller), 0, 1, 2, 3 };
 
     int found_idx = -1;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 1 + kMaxGamepads; i++) {
       uint8 j = scan_order[i];
-      if (j < 2 && g_config.enable_gamepad[j] && (i == 0 || g_gamepad[j].joystick_id == -1)) {
+      bool enabled = j < 2 ? g_config.enable_gamepad[j] : (j < kMaxGamepads && g_coop_enabled);
+      if (j < kMaxGamepads && enabled && (i == 0 || g_gamepad[j].joystick_id == -1)) {
         found_idx = j;
         break;
       }
@@ -994,6 +1003,17 @@ static void HandleGamepadInput(GamepadInfo *gi, int button, bool pressed) {
   if (!!(gi->modifiers & (1 << button)) == pressed)
     return;
   gi->modifiers ^= 1 << button;
+  if (gi->index >= 2) {
+    // Controllers 3-4 use the controller-2 layout and drive co-op players only
+    if (pressed)
+      gi->last_cmd[button] = FindCmdForGamepadButton(button + 1 * kGamepadBtn_Count, gi->modifiers);
+    int cmd = gi->last_cmd[button];
+    if (cmd >= kKeys_ControlsP2 && cmd <= kKeys_ControlsP2_Last) {
+      uint16 m = 1 << kKbdRemap[cmd - kKeys_ControlsP2];
+      gi->extra_buttons = pressed ? (gi->extra_buttons | m) : (gi->extra_buttons & ~m);
+    }
+    return;
+  }
   if (pressed)
     gi->last_cmd[button] = FindCmdForGamepadButton(button + gi->index * kGamepadBtn_Count, gi->modifiers);
   if (gi->last_cmd[button] != 0)
@@ -1269,7 +1289,7 @@ static void ReleaseAllInputs(void) {
   g_input_state = 0;
   memset(g_held_keys, 0, sizeof(g_held_keys));
   g_turbo = 0;
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < kMaxGamepads; i++) {
     GamepadInfo *gi = &g_gamepad[i];
     gi->modifiers = 0;
     // Triggers already held count as pressed, so they don't fire again in the menu.
@@ -1277,11 +1297,12 @@ static void ReleaseAllInputs(void) {
     gi->axis_buttons = 0;
     gi->last_axis_x = gi->last_axis_y = 0;
     memset(gi->last_cmd, 0, sizeof(gi->last_cmd));
+    gi->extra_buttons = 0;
   }
 }
 
 int Platform_GetPadFamily(void) {
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < kMaxGamepads; i++) {
     if (g_gamepad[i].joystick_id == -1)
       continue;
     SDL_GameController *gc = SDL_GameControllerFromInstanceID(g_gamepad[i].joystick_id);
@@ -1317,7 +1338,7 @@ static void CloseSettingsMenu(void) {
 
 static uint32 GetMenuHeldDirs(void) {
   uint32 dirs = 0;
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < kMaxGamepads; i++) {
     if (g_gamepad[i].joystick_id == -1)
       continue;
     SDL_GameController *gc = SDL_GameControllerFromInstanceID(g_gamepad[i].joystick_id);

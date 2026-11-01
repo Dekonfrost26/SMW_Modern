@@ -8,6 +8,10 @@
 enum { kCoopMaxPlayers = 4 };  // player 0 is the game's own player
 
 extern bool g_coop_enabled;
+// Buttons of controllers 3 and 4 (index 2 and 3), in the same 12-bit layout
+// as player 1/2 input. Set by the host each frame; players 1 and 2 use the
+// SNES joypad path instead.
+extern uint16 g_coop_pad_input[kCoopMaxPlayers];
 // Player whose state is currently swapped into RAM (0 = the game's own player).
 extern uint8 g_coop_current_player;
 
@@ -34,3 +38,10 @@ void Coop_SetCarryOwner(uint8 k, uint8 player);
 bool Coop_RunAsCarrier(CoopSpriteFn *fn, uint8 k);
 // Per-frame player flag resets the sprite pass does for the main player.
 void Coop_BeginSpriteFrame(void);
+
+// Phase 3: the X or Y position of the player nearest to (sx, sy), for enemy
+// AI that faces or chases "the player". main_x/main_y are the main player's
+// position; current_copy picks the D1/D3 copy instead of 94/96. Returns the
+// main player's value when no extra player is nearer (or while an extra
+// player's own state is swapped in).
+uint16 Coop_NearestPlayerPos(uint16 sx, uint16 sy, uint16 main_x, uint16 main_y, bool current_copy, bool want_y);

@@ -5716,13 +5716,14 @@ void Spr089_Layer3Smasher_02D49C(uint8 k) {  // 02d49c
 }
 
 uint8 CheckPlayerPositionRelativeToSprite_Bank23_X(uint8 k) {  // 02d4fa
-  int t = player_xpos - GetSprXPos(k);
+  // Co-op: the nearest player
+  int t = Coop_NearestPlayerPos(GetSprXPos(k), GetSprYPos(k), player_xpos, player_ypos, false, false) - GetSprXPos(k);
 //  r15 = t;
   return sign16(t) != 0;
 }
 
 uint8 CheckPlayerPositionRelativeToSprite_Bank23_Y(uint8 k) {  // 02d50c
-  int t = player_ypos - GetSprYPos(k);
+  int t = Coop_NearestPlayerPos(GetSprXPos(k), GetSprYPos(k), player_xpos, player_ypos, false, true) - GetSprYPos(k);
 //  r14 = t;
   return sign16(t) != 0;
 }

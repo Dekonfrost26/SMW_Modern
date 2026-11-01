@@ -15,10 +15,12 @@
 #include "smw_rtl.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "coop_art.h"
 
 bool g_coop_enabled;
 uint8 g_coop_current_player;
+uint16 g_coop_pad_input[kCoopMaxPlayers];
 
 typedef struct RamRange { uint16 addr, len; } RamRange;
 
@@ -71,6 +73,10 @@ typedef struct CoopState {
   uint8 reserved[11];
   uint8 carry_owner[kSprSlotsMax];  // player carrying each normal sprite slot
   uint8 ctx[kCoopMaxPlayers][kCtxSize];
+  // Phase 3
+  uint8 bubble[kCoopMaxPlayers];        // frames spent in a bubble (0 = not in one)
+  uint16 bubble_x[kCoopMaxPlayers], bubble_y[kCoopMaxPlayers];  // bubble position (player box, world)
+  uint8 pad_prev[kCoopMaxPlayers][2];   // previous held buttons, controllers 3-4
 } CoopState;
 
 _Static_assert(sizeof(CoopState) <= kRamCoopSize, "co-op state must fit the RAM extension area");
@@ -139,6 +145,103 @@ void Coop_OnLevelLoad(void) {
   memset(Coop()->carry_owner, 0, sizeof(Coop()->carry_owner));
 }
 
+// ---------------------------------------------------------------------------
+// Bubbles: a player who dies or falls floats back to the main player and pops
+// out with any button once close (or by itself after a while).
+
+enum {
+  kBubbleMinFrames = 40,    // before a bubble can pop
+  kBubbleAutoPop = 240,     // pops by itself after this many frames near the main player
+  kBubbleSpeed = 2,         // pixels per frame
+};
+
+static void EnterBubble(int p) {
+  CoopState *cs = Coop();
+  uint8 *ctx = cs->ctx[p];
+  int16 x = CtxWord(ctx, 0x94), y = CtxWord(ctx, 0x96);
+  int16 cy = mirror_current_layer1_ypos;
+  // Start somewhere visible (falling players are below the screen)
+  if (y > cy + 0xB0) y = cy + 0xB0;
+  if (y < cy - 8) y = cy - 8;
+  cs->bubble_x[p] = x, cs->bubble_y[p] = y;
+  cs->bubble[p] = 1;
+  *CtxByte(ctx, 0x71) = 0;  // not dying any more
+  // Carried items fall out of the bubble
+  for (int k = 0; k < kSprSlotsMax; k++)
+    if (cs->carry_owner[k] == p)
+      cs->carry_owner[k] = 0, SPR(spr_current_status, k) = (SPR(spr_current_status, k) == 0x0B) ? 9 : SPR(spr_current_status, k);
+}
+
+static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+static void UpdateBubble(int p, uint8 press1, uint8 press2) {
+  CoopState *cs = Coop();
+  static const int8 kJoinOffsetX[kCoopMaxPlayers] = { 0, 20, -20, 40 };
+  int tx = (int16)player_xpos + kJoinOffsetX[p], ty = (int16)player_ypos - 24;
+  int bx = (int16)cs->bubble_x[p], by = (int16)cs->bubble_y[p];
+  bx += Clamp(tx - bx, -kBubbleSpeed, kBubbleSpeed);
+  by += Clamp(ty - by, -kBubbleSpeed, kBubbleSpeed);
+  cs->bubble_x[p] = bx, cs->bubble_y[p] = by;
+  if (cs->bubble[p] < 255)
+    cs->bubble[p]++;
+  bool close = abs(tx - bx) < 20 && abs(ty - by) < 24;
+  if (cs->bubble[p] >= kBubbleMinFrames && close && ((press1 | press2) || cs->bubble[p] >= kBubbleAutoPop)) {
+    cs->bubble[p] = 0;
+    SpawnAtMainPlayer(p, kJoinFlash);
+    // Pop where the bubble is
+    uint8 *ctx = cs->ctx[p];
+    CtxByte(ctx, 0x94)[0] = (uint8)bx, CtxByte(ctx, 0x94)[1] = (uint8)(bx >> 8);
+    CtxByte(ctx, 0x96)[0] = (uint8)by, CtxByte(ctx, 0x96)[1] = (uint8)(by >> 8);
+    *CtxByte(ctx, 0x7D) = 0xD0;  // small hop out of the bubble
+    *CtxByte(ctx, 0x72) = 0x0B;  // in the air
+    io_sound_ch1 = 0x01;
+  }
+}
+
+// Controller input as the player code sees it (same merge as PollJoypadInputs:
+// A and X also count as B/Y in hold1/press1).
+typedef struct PadIn { uint8 hold1, press1, hold2, press2; } PadIn;
+
+static PadIn ReadPad(int p) {
+  PadIn in;
+  if (p == 1) {
+    uint8 h2 = io_controller_hold2_copyp2, pr2 = io_controller_press2_copyp2;
+    in.hold1 = io_controller_hold1_copyp2 | (h2 & 0xC0);
+    in.press1 = io_controller_press1_copyp2 | (pr2 & 0x40);
+    in.hold2 = h2, in.press2 = pr2;
+    return in;
+  }
+  // Controllers 3-4: 12-bit joypad word -> JOY registers -> hold/press bytes
+  uint16 bits = g_coop_pad_input[p], r = 0;
+  for (int i = 0; i < 16; i++, bits >>= 1)
+    r = (uint16)(r * 2 + (bits & 1));
+  uint8 h1 = r >> 8, h2 = r & 0xF0;
+  uint8 *prev = Coop()->pad_prev[p];
+  uint8 p1 = h1 & (prev[0] ^ h1), p2 = h2 & (prev[1] ^ h2);
+  prev[0] = h1, prev[1] = h2;
+  in.hold1 = h1 | (h2 & 0xC0), in.press1 = p1 | (p2 & 0x40);
+  in.hold2 = h2, in.press2 = p2;
+  return in;
+}
+
+uint16 Coop_NearestPlayerPos(uint16 sx, uint16 sy, uint16 main_x, uint16 main_y, bool current_copy, bool want_y) {
+  CoopState *cs = Coop();
+  if (!g_coop_enabled || g_coop_current_player)
+    return want_y ? main_y : main_x;
+  uint16 bx = main_x, by = main_y;
+  int best = abs((int16)(main_x - sx)) + abs((int16)(main_y - sy));
+  for (int p = 1; p < kCoopMaxPlayers; p++) {
+    if (!cs->active[p] || cs->bubble[p])
+      continue;
+    uint8 *ctx = cs->ctx[p];
+    uint16 x = CtxWord(ctx, current_copy ? 0xD1 : 0x94), y = CtxWord(ctx, current_copy ? 0xD3 : 0x96);
+    int d = abs((int16)(x - sx)) + abs((int16)(y - sy));
+    if (d < best)
+      best = d, bx = x, by = y;
+  }
+  return want_y ? by : bx;
+}
+
 // Swapping an extra player's state in and out of RAM, with the world guard.
 typedef struct PlayerSwap {
   uint8 main_ctx[kCtxSize];
@@ -193,7 +296,7 @@ static void RunExtraPlayer(int p, uint8 hold1, uint8 press1, uint8 hold2, uint8 
   LeavePlayer(&swap, p);
   (void)cs;
   if (died || fell_off)
-    SpawnAtMainPlayer(p, kRespawnFlash);
+    EnterBubble(p);
 }
 
 void Coop_FanOut(CoopSpriteFn *fn, uint8 k, bool normal_sprite) {
@@ -201,7 +304,7 @@ void Coop_FanOut(CoopSpriteFn *fn, uint8 k, bool normal_sprite) {
   if (!g_coop_enabled || g_coop_current_player)
     return;
   for (int p = 1; p < kCoopMaxPlayers; p++) {
-    if (!cs->active[p] || *CtxByte(cs->ctx[p], 0x71) == 9)
+    if (!cs->active[p] || cs->bubble[p] || *CtxByte(cs->ctx[p], 0x71) == 9)
       continue;
     PlayerSwap swap;
     EnterPlayer(&swap, p);
@@ -223,7 +326,7 @@ void Coop_FanOut(CoopSpriteFn *fn, uint8 k, bool normal_sprite) {
     bool died = player_current_state == 9;
     LeavePlayer(&swap, p);
     if (died)
-      SpawnAtMainPlayer(p, kRespawnFlash);
+      EnterBubble(p);
   }
 }
 
@@ -249,7 +352,7 @@ bool Coop_RunAsCarrier(CoopSpriteFn *fn, uint8 k) {
   bool died = player_current_state == 9;
   LeavePlayer(&swap, p);
   if (died)
-    SpawnAtMainPlayer(p, kRespawnFlash);
+    EnterBubble(p);
   return true;
 }
 
@@ -273,30 +376,36 @@ void Coop_UpdateExtraPlayers(void) {
   CoopState *cs = Coop();
   if (!g_coop_enabled || flag_two_player_game || misc_game_mode != 0x14) {
     memset(cs->active, 0, sizeof(cs->active));
+    memset(cs->bubble, 0, sizeof(cs->bubble));
     return;
   }
   if (cs->respawn_pending) {
     cs->respawn_pending = 0;
     for (int p = 1; p < kCoopMaxPlayers; p++)
       if (cs->active[p])
-        SpawnAtMainPlayer(p, kJoinFlash);
-  }
-  // Player 2 uses the second controller: Start joins, Start+Select leaves.
-  uint8 hold1 = io_controller_hold1_copyp2, press1 = io_controller_press1_copyp2;
-  uint8 hold2 = io_controller_hold2_copyp2, press2 = io_controller_press2_copyp2;
-  if (!cs->active[1]) {
-    if (press1 & 0x10)
-      SpawnAtMainPlayer(1, kJoinFlash);
-    return;
-  }
-  if ((hold1 & 0x30) == 0x30 && (press1 & 0x30)) {
-    cs->active[1] = 0;
-    return;
+        cs->bubble[p] = 0, SpawnAtMainPlayer(p, kJoinFlash);
   }
   // The world is frozen (main player dying, powering up, keyhole...).
-  if (flag_sprites_locked || player_freeze_player_flag || player_current_state == 9)
-    return;
-  RunExtraPlayer(1, hold1, press1, hold2, press2);
+  bool frozen = flag_sprites_locked || player_freeze_player_flag || player_current_state == 9;
+  for (int p = 1; p < kCoopMaxPlayers; p++) {
+    PadIn in = ReadPad(p);  // every frame, to keep press detection right
+    // Start joins; Start+Select leaves.
+    if (!cs->active[p]) {
+      if (in.press1 & 0x10)
+        cs->bubble[p] = 0, SpawnAtMainPlayer(p, kJoinFlash);
+      continue;
+    }
+    if ((in.hold1 & 0x30) == 0x30 && (in.press1 & 0x30)) {
+      cs->active[p] = 0, cs->bubble[p] = 0;
+      continue;
+    }
+    if (frozen)
+      continue;
+    if (cs->bubble[p])
+      UpdateBubble(p, in.press1, in.press2);
+    else
+      RunExtraPlayer(p, in.hold1, in.press1, in.hold2, in.press2);
+  }
 }
 
 static const uint8 (*PickFrame(uint8 *ctx))[kCoopArtW] {
@@ -309,6 +418,51 @@ static const uint8 (*PickFrame(uint8 *ctx))[kCoopArtW] {
   return (*CtxByte(ctx, 0x13DB) & 1) ? kCoopArt_walk1 : kCoopArt_walk2;
 }
 
+static uint32 Blend(uint32 dst, uint32 src, int a256) {
+  uint32 rb = ((src & 0xff00ff) * a256 + (dst & 0xff00ff) * (256 - a256)) >> 8;
+  uint32 g = ((src & 0x00ff00) * a256 + (dst & 0x00ff00) * (256 - a256)) >> 8;
+  return (rb & 0xff00ff) | (g & 0x00ff00);
+}
+
+static void DrawArt(uint8 *pixels, int pitch, int width, int height, const uint8 (*art)[kCoopArtW],
+                    int sx, int sy, bool face_right, const uint32 *pal) {
+  for (int y = 0; y < kCoopArtH; y++) {
+    int py = sy + y;
+    if ((unsigned)py >= (unsigned)height)
+      continue;
+    uint32 *row = (uint32 *)(pixels + py * pitch);
+    for (int x = 0; x < kCoopArtW; x++) {
+      uint8 c = art[y][face_right ? x : kCoopArtW - 1 - x];
+      int px = sx + x;
+      if (!c || (unsigned)px >= (unsigned)width)
+        continue;
+      // Keys: . k w p l f | b h d s S
+      row[px] = c <= 5 ? kCoopCommonColors[c - 1] : pal[c - 6];
+    }
+  }
+}
+
+// A soap-bubble ring around (cx, cy): translucent fill, light rim, highlight.
+static void DrawBubble(uint8 *pixels, int pitch, int width, int height, int cx, int cy, int r) {
+  for (int y = -r; y <= r; y++) {
+    int py = cy + y;
+    if ((unsigned)py >= (unsigned)height)
+      continue;
+    uint32 *row = (uint32 *)(pixels + py * pitch);
+    for (int x = -r; x <= r; x++) {
+      int px = cx + x, d2 = x * x + y * y;
+      if ((unsigned)px >= (unsigned)width || d2 > r * r)
+        continue;
+      if (d2 >= (r - 1) * (r - 1))
+        row[px] = 0xd8f4ff;                              // rim
+      else if (x < -r / 3 && y < -r / 3 && d2 >= (r - 4) * (r - 4) && d2 < (r - 2) * (r - 2))
+        row[px] = 0xffffff;                              // highlight
+      else
+        row[px] = Blend(row[px], 0xa8e0ff, 64);          // tinted inside
+    }
+  }
+}
+
 void Coop_DrawOverlay(uint8 *pixels, int pitch, int width, int height) {
   CoopState *cs = Coop();
   uint8 mode = misc_game_mode;
@@ -319,28 +473,22 @@ void Coop_DrawOverlay(uint8 *pixels, int pitch, int width, int height) {
     if (!cs->active[p])
       continue;
     uint8 *ctx = cs->ctx[p];
+    const uint32 *pal = kCoopPlayerColors[(p - 1) % 3];
+    if (cs->bubble[p]) {
+      // Gently bobbing bubble with the player curled up inside
+      int bob = ((cs->bubble[p] >> 3) & 1);
+      int sx = (int16)(cs->bubble_x[p] - mirror_current_layer1_xpos) + margin;
+      int sy = (int16)(cs->bubble_y[p] - mirror_current_layer1_ypos) + 32 - kCoopArtH + bob;
+      DrawArt(pixels, pitch, width, height, kCoopArt_duck, sx, sy, true, pal);
+      DrawBubble(pixels, pitch, width, height, sx + 8, sy + 12, 14);
+      continue;
+    }
     // Flicker while invincible after a hit or respawn
     if (*CtxByte(ctx, 0x1497) && (counter_global_frames & 2))
       continue;
-    const uint8 (*art)[kCoopArtW] = PickFrame(ctx);
-    bool face_right = *CtxByte(ctx, 0x76) != 0;
     // The player's box is 16x32 from (xpos, ypos); stand the art on its bottom.
     int sx = (int16)(CtxWord(ctx, 0x94) - mirror_current_layer1_xpos) + margin;
     int sy = (int16)(CtxWord(ctx, 0x96) - mirror_current_layer1_ypos) + 32 - kCoopArtH;
-    const uint32 *pal = kCoopPlayerColors[(p - 1) % 3];
-    for (int y = 0; y < kCoopArtH; y++) {
-      int py = sy + y;
-      if ((unsigned)py >= (unsigned)height)
-        continue;
-      uint32 *row = (uint32 *)(pixels + py * pitch);
-      for (int x = 0; x < kCoopArtW; x++) {
-        uint8 c = art[y][face_right ? x : kCoopArtW - 1 - x];
-        int px = sx + x;
-        if (!c || (unsigned)px >= (unsigned)width)
-          continue;
-        // Keys: . k w p l f | b h d s S
-        row[px] = c <= 5 ? kCoopCommonColors[c - 1] : pal[c - 6];
-      }
-    }
+    DrawArt(pixels, pitch, width, height, PickFrame(ctx), sx, sy, *CtxByte(ctx, 0x76) != 0, pal);
   }
 }

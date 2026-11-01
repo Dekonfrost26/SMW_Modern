@@ -3780,13 +3780,14 @@ uint8 GetRand_01AD07(uint8 j) {  // 01ad07
 }
 
 uint8 CheckPlayerPositionRelativeToSprite_Bank01_X(uint8 k) {  // 01ad30
-  int t = player_current_xpos - GetSprXPos(k);
+  // Co-op: the nearest player
+  int t = Coop_NearestPlayerPos(GetSprXPos(k), GetSprYPos(k), player_current_xpos, player_current_ypos, true, false) - GetSprXPos(k);
 //  r15 = t;
   return sign16(t) != 0;
 }
 
 uint8 CheckPlayerPositionRelativeToSprite_Bank01_Y(uint8 k) {  // 01ad42
-  int t = player_current_ypos - GetSprYPos(k);
+  int t = Coop_NearestPlayerPos(GetSprXPos(k), GetSprYPos(k), player_current_xpos, player_current_ypos, true, true) - GetSprYPos(k);
 //  r14 = t;
   return sign16(t) != 0;
 }

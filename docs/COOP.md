@@ -79,7 +79,11 @@ walking enemy and is hurt (and respawned) by touching one from the side.
 1. Context table, plus a second player updated and drawn (no enemy contact).
    Shared camera. (done)
 2. Collision fan-out: stomp, hurt, platforms, kick/carry with owners. (done)
-3. Bubbles, death and respawn, drop-in/out, 4 pads, P3/P4 characters.
+3. Bubbles, death and respawn, drop-in/out, 4 pads, P3/P4 characters. (done:
+   controllers 3-4 feed `g_coop_pad_input` with the controller-2 button layout;
+   extra players who die or fall float back in a bubble and pop out with any
+   button near the main player; `CheckPlayerPositionRelativeToSprite_*` use the
+   nearest player via `Coop_NearestPlayerPos`.)
 4. Yoshi, cape, pipes, doors, keyholes, goal, overworld handling, saves.
 
 Each phase keeps single-player behaviour identical. Check with

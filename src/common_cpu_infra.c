@@ -10,6 +10,10 @@
 enum RunMode { RM_BOTH, RM_MINE, RM_THEIRS };
 uint8 g_runmode = RM_BOTH;
 
+void RtlSetVerifyAgainstRom(bool enabled) {
+  g_runmode = enabled ? RM_BOTH : RM_MINE;
+}
+
 extern int g_got_mismatch_count;
 
 Snes *g_snes;

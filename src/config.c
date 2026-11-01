@@ -99,8 +99,15 @@ static bool KeyMapHash_Add(uint16 key, uint16 cmd) {
   uint16 *cur = &keymap_hash_first[j];
   while (*cur) {
     KeyMapHashEnt *ent = &keymap_hash[*cur - 1];
-    if (ent->key == key)
+    if (ent->key == key) {
+      if (ent->cmd == 0) {  // slot freed by a rebind; reuse it
+        ent->cmd = cmd;
+        keymap_hash_size--;
+        return true;
+      }
+      keymap_hash_size--;
       return false;
+    }
     cur = &ent->next;
   }
   *cur = i + 1;
@@ -129,7 +136,16 @@ int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod) {
   if (code != SDLK_LSHIFT && code != SDLK_RSHIFT)
     key |= mod & KMOD_SHIFT ? kKeyMod_Shift : 0;
   key |= REMAP_SDL_KEYCODE(code);
-  return KeyMapHash_Find(key);
+  int cmd = KeyMapHash_Find(key);
+  if (cmd == 0 && (key & (kKeyMod_Alt | kKeyMod_Ctrl | kKeyMod_Shift))) {
+    // Allow SNES buttons to work while a modifier key is held, e.g. when
+    // Shift or Ctrl itself is bound to run/jump.
+    int plain = KeyMapHash_Find(REMAP_SDL_KEYCODE(code));
+    if ((plain >= kKeys_Controls && plain <= kKeys_Controls_Last) ||
+        (plain >= kKeys_ControlsP2 && plain <= kKeys_ControlsP2_Last))
+      cmd = plain;
+  }
+  return cmd;
 }
 
 static void ParseKeyArray(char *value, int cmd, int size) {
@@ -167,7 +183,8 @@ typedef struct GamepadMapEnt {
 
 static uint16 joymap_first[kGamepadBtn_Count * 2];  // 2 gamepads
 static GamepadMapEnt *joymap_ents;
-static int joymap_size;
+static int joymap_size, joymap_cap;
+static uint16 joymap_free;  // 1-based index of the first reusable entry
 static uint8 has_assigned_joypad_controls;
 
 static int CountBits32(uint32 n) {
@@ -178,18 +195,26 @@ static int CountBits32(uint32 n) {
 }
 
 static void GamepadMap_Add(int button, uint32 modifiers, uint16 cmd) {
-  if ((joymap_size & 0xff) == 0) {
-    if (joymap_size > 1000)
-      Die("Too many joypad keys"); 
-    joymap_ents = (GamepadMapEnt*)realloc(joymap_ents, sizeof(GamepadMapEnt) * (joymap_size + 64));
-    if (!joymap_ents) Die("realloc failure");
+  int i;
+  if (joymap_free) {
+    // Reuse an entry released by a rebind
+    i = joymap_free - 1;
+    joymap_free = joymap_ents[i].next;
+  } else {
+    if (joymap_size == joymap_cap) {
+      if (joymap_cap >= 4096)
+        Die("Too many joypad keys");
+      joymap_cap = joymap_cap ? joymap_cap * 2 : 64;
+      joymap_ents = (GamepadMapEnt*)realloc(joymap_ents, sizeof(GamepadMapEnt) * joymap_cap);
+      if (!joymap_ents) Die("realloc failure");
+    }
+    i = joymap_size++;
   }
   uint16 *p = &joymap_first[button];
   // Insert it as early as possible but before after any entry with more modifiers.
   int cb = CountBits32(modifiers);
   while (*p && cb < CountBits32(joymap_ents[*p - 1].modifiers))
     p = &joymap_ents[*p - 1].next;
-  int i = joymap_size++;
   GamepadMapEnt *ent = &joymap_ents[i];
   ent->modifiers = modifiers;
   ent->cmd = cmd;
@@ -352,7 +377,13 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       }
     }
   } else if (section == 1) {
-    if (StringEqualsNoCase(key, "WindowSize")) {
+    if (StringEqualsNoCase(key, "IntegerScaling")) {
+      return ParseBool(value, &g_config.integer_scaling);
+    } else if (StringEqualsNoCase(key, "VSync")) {
+      return ParseBool(value, &g_config.vsync);
+    } else if (StringEqualsNoCase(key, "ShowFPS")) {
+      return ParseBool(value, &g_config.show_fps);
+    } else if (StringEqualsNoCase(key, "WindowSize")) {
       char *s;
       if (StringEqualsNoCase(value, "Auto")){
         g_config.window_width  = 0;
@@ -395,7 +426,11 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     }
   } else if (section == 2) {
-    if (StringEqualsNoCase(key, "EnableAudio")) {
+    if (StringEqualsNoCase(key, "Volume")) {
+      int v = atoi(value);
+      g_config.volume = (uint8)(v < 0 ? 0 : v > 100 ? 100 : v);
+      return true;
+    } else if (StringEqualsNoCase(key, "EnableAudio")) {
       return ParseBool(value, &g_config.enable_audio);
     } else if (StringEqualsNoCase(key, "AudioFreq")) {
       g_config.audio_freq = (uint16)strtol(value, (char**)NULL, 10);
@@ -435,6 +470,10 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_config.display_perf_title);
     } else if (StringEqualsNoCase(key, "DisableFrameDelay")) {
       return ParseBool(value, &g_config.disable_frame_delay);
+    } else if (StringEqualsNoCase(key, "VerifyAgainstRom")) {
+      return ParseBool(value, &g_config.verify_against_rom);
+    } else if (StringEqualsNoCase(key, "PauseOnFocusLoss")) {
+      return ParseBool(value, &g_config.pause_on_focus_loss);
     }
   } else if (section == 4) {
   }
@@ -477,15 +516,370 @@ static bool ParseOneConfigFile(const char *filename, int depth) {
   return true;
 }
 
+static char g_config_filename[1024];
+
 void ParseConfigFile(const char *filename) {
   g_config.msuvolume = 100;  // default msu volume, 100%
   g_config.save_playthrough = true;
+  g_config.vsync = true;
+  g_config.volume = 100;
+  g_config.pause_on_focus_loss = true;
 
   if (filename != NULL || !ParseOneConfigFile("smw.user.ini", 0)) {
     if (filename == NULL)
       filename = "smw.ini";
     if (!ParseOneConfigFile(filename, 0))
       fprintf(stderr, "Warning: Unable to read config file %s\n", filename);
+  } else {
+    filename = "smw.user.ini";
   }
+  snprintf(g_config_filename, sizeof(g_config_filename), "%s", filename);
   RegisterDefaultKeys();
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard rebinding for the 12 SNES buttons
+
+uint16 Config_PackSdlKey(SDL_Keycode code) {
+  if (code & ~(SDLK_SCANCODE_MASK | 0x1ff))
+    return 0;
+  return REMAP_SDL_KEYCODE(code);
+}
+
+static SDL_Keycode UnpackSdlKey(uint16 key) {
+  return (key & kKeyMod_ScanCode ? SDLK_SCANCODE_MASK : 0) | (key & (kKeyMod_ScanCode - 1));
+}
+
+static KeyMapHashEnt *FindEntForCmd(int cmd) {
+  for (int i = 0; i < keymap_hash_size; i++)
+    if (keymap_hash[i].cmd == cmd)
+      return &keymap_hash[i];
+  return NULL;
+}
+
+static KeyMapHashEnt *FindEntForKey(uint16 key) {
+  int i = keymap_hash_first[key % 255];
+  while (i) {
+    KeyMapHashEnt *ent = &keymap_hash[i - 1];
+    if (ent->key == key)
+      return ent;
+    i = ent->next;
+  }
+  return NULL;
+}
+
+uint16 Config_GetControlKey(int button) {
+  KeyMapHashEnt *ent = FindEntForCmd(kKeys_Controls + button);
+  return ent ? ent->key : 0;
+}
+
+const char *Config_ControlKeyName(int button) {
+  uint16 key = Config_GetControlKey(button);
+  return key ? SDL_GetKeyName(UnpackSdlKey(key)) : "";
+}
+
+static bool g_keys_dirty, g_pad_dirty;
+
+// A key is only usable if its name survives a round trip through the .ini
+// (names containing ',' or '#' would be split or treated as a comment).
+static bool KeyIsBindable(SDL_Keycode code) {
+  if (code == SDLK_UNKNOWN || code == SDLK_ESCAPE || !Config_PackSdlKey(code))
+    return false;
+  const char *name = SDL_GetKeyName(code);
+  if (!name || !*name || strchr(name, ',') || strchr(name, '#'))
+    return false;
+  return SDL_GetKeyFromName(name) == code;
+}
+
+static int SetControlKeyPacked(int button, uint16 key) {
+  int cmd = kKeys_Controls + button;
+  KeyMapHashEnt *mine = FindEntForCmd(cmd);
+  KeyMapHashEnt *other = FindEntForKey(key);
+  if (mine && mine == other)
+    return 0;
+  int stolen = 0;
+  uint16 old_key = mine ? mine->key : 0;
+  if (mine)
+    mine->cmd = 0;
+  if (other) {
+    int other_cmd = other->cmd;
+    other->cmd = cmd;
+    if (other_cmd >= kKeys_Controls && other_cmd <= kKeys_Controls_Last) {
+      // The key belonged to another SNES button: give that button our old key.
+      if (old_key)
+        FindEntForKey(old_key)->cmd = other_cmd;
+    } else {
+      stolen = other_cmd;
+    }
+  } else {
+    KeyMapHash_Add(key, cmd);
+  }
+  g_keys_dirty = true;
+  return stolen;
+}
+
+int Config_SetControlKey(int button, SDL_Keycode code) {
+  if (button < 0 || button >= 12 || !KeyIsBindable(code))
+    return -1;
+  return SetControlKeyPacked(button, Config_PackSdlKey(code));
+}
+
+void Config_ResetControlKeys(void) {
+  for (int i = 0; i < 12; i++)
+    SetControlKeyPacked(i, kDefaultKbdControls[kKeys_Controls + i]);
+}
+
+// ---------------------------------------------------------------------------
+// Writing settings back to the .ini, keeping comments and layout intact
+
+typedef struct IniDoc {
+  char **lines;
+  int n, cap;
+} IniDoc;
+
+static void IniDoc_Insert(IniDoc *d, int at, char *line) {
+  if (d->n == d->cap) {
+    d->cap = d->cap ? d->cap * 2 : 256;
+    d->lines = (char **)realloc(d->lines, sizeof(char *) * d->cap);
+  }
+  memmove(d->lines + at + 1, d->lines + at, sizeof(char *) * (d->n - at));
+  d->lines[at] = line;
+  d->n++;
+}
+
+static char *DupStr(const char *s) {
+  size_t n = strlen(s) + 1;
+  char *r = (char *)malloc(n);
+  memcpy(r, s, n);
+  return r;
+}
+
+static const char *SkipWs(const char *s) {
+  while (*s == ' ' || *s == '\t') s++;
+  return s;
+}
+
+// Returns true if the line is "Key = ..." (or "#Key = ..." when allow_comment)
+static bool LineIsKey(const char *line, const char *key, bool commented) {
+  const char *s = SkipWs(line);
+  if (commented) {
+    if (*s != '#') return false;
+    s = SkipWs(s + 1);
+  }
+  size_t kl = strlen(key);
+  if (!StringStartsWithNoCase(s, key)) return false;
+  s = SkipWs(s + kl);
+  return *s == '=';
+}
+
+static bool LineIsSection(const char *line) {
+  return *SkipWs(line) == '[';
+}
+
+static void IniDoc_Set(IniDoc *d, const char *section, const char *key, const char *value) {
+  char buf[512];
+  snprintf(buf, sizeof(buf), "%s = %s", key, value);
+  int sec = -1, sec_end;
+  for (int i = 0; i < d->n; i++) {
+    if (LineIsSection(d->lines[i]) && StringStartsWithNoCase(SkipWs(d->lines[i]), section)) {
+      sec = i;
+      break;
+    }
+  }
+  if (sec < 0) {
+    IniDoc_Insert(d, d->n, DupStr(""));
+    IniDoc_Insert(d, d->n, DupStr(section));
+    sec = d->n - 1;
+  }
+  for (sec_end = sec + 1; sec_end < d->n && !LineIsSection(d->lines[sec_end]); sec_end++) {}
+  for (int pass = 0; pass < 2; pass++) {
+    for (int i = sec + 1; i < sec_end; i++) {
+      if (LineIsKey(d->lines[i], key, pass == 1)) {
+        free(d->lines[i]);
+        d->lines[i] = DupStr(buf);
+        return;
+      }
+    }
+  }
+  // Insert after the last non-empty line of the section
+  int at = sec_end;
+  while (at > sec + 1 && *SkipWs(d->lines[at - 1]) == 0) at--;
+  IniDoc_Insert(d, at, DupStr(buf));
+}
+
+// ---------------------------------------------------------------------------
+// Gamepad rebinding for the 12 SNES buttons (same layout for both gamepads)
+
+static const char *const kPadButtonIniNames[kGamepadBtn_Count] = {
+  "A", "B", "X", "Y", "Back", "Guide", "Start", "L3", "R3",
+  "Lb", "Rb", "DpadUp", "DpadDown", "DpadLeft", "DpadRight", "L2", "R2",
+};
+
+int Config_GetPadButton(int button) {
+  int cmd = kKeys_Controls + button;
+  for (int b = 0; b < kGamepadBtn_Count; b++) {
+    for (int e = joymap_first[b]; e != 0; e = joymap_ents[e - 1].next) {
+      GamepadMapEnt *ent = &joymap_ents[e - 1];
+      if (ent->cmd == cmd && ent->modifiers == 0)
+        return b;
+    }
+  }
+  return -1;
+}
+
+static void UnlinkPadControls(void) {
+  // Remove the plain (no modifier) SNES button entries of both gamepads.
+  for (int b = 0; b < kGamepadBtn_Count * 2; b++) {
+    uint16 *p = &joymap_first[b];
+    while (*p) {
+      GamepadMapEnt *ent = &joymap_ents[*p - 1];
+      bool is_ctrl = ent->modifiers == 0 &&
+          ((ent->cmd >= kKeys_Controls && ent->cmd <= kKeys_Controls_Last) ||
+           (ent->cmd >= kKeys_ControlsP2 && ent->cmd <= kKeys_ControlsP2_Last));
+      if (is_ctrl) {
+        uint16 idx = *p;
+        *p = ent->next;
+        ent->cmd = 0;
+        ent->next = joymap_free;
+        joymap_free = idx;
+      } else {
+        p = &ent->next;
+      }
+    }
+  }
+}
+
+static void ApplyPadLayout(const int layout[12]) {
+  UnlinkPadControls();
+  for (int i = 0; i < 12; i++) {
+    if (layout[i] < 0)
+      continue;
+    GamepadMap_Add(layout[i], 0, kKeys_Controls + i);
+    GamepadMap_Add(layout[i] + kGamepadBtn_Count, 0, kKeys_ControlsP2 + i);
+  }
+}
+
+void Config_SetPadButton(int button, int pad_btn) {
+  if (button < 0 || button >= 12 || pad_btn < 0 || pad_btn >= kGamepadBtn_Count || pad_btn == kGamepadBtn_Guide)
+    return;
+  int layout[12];
+  for (int i = 0; i < 12; i++)
+    layout[i] = Config_GetPadButton(i);
+  if (layout[button] == pad_btn)
+    return;
+  for (int i = 0; i < 12; i++)
+    if (layout[i] == pad_btn)
+      layout[i] = layout[button];  // swap with the button that had it
+  layout[button] = pad_btn;
+  ApplyPadLayout(layout);
+  g_pad_dirty = true;
+}
+
+void Config_ResetPadButtons(void) {
+  int layout[12];
+  for (int i = 0; i < 12; i++)
+    layout[i] = kDefaultGamepadCmds[i];
+  ApplyPadLayout(layout);
+  g_pad_dirty = true;
+}
+
+#ifdef _WIN32
+__declspec(dllimport) int __stdcall MoveFileExA(const char *existing, const char *new_name, unsigned long flags);
+#endif
+
+static bool ReplaceFile_(const char *src, const char *dst) {
+#ifdef _WIN32
+  return MoveFileExA(src, dst, 1 /* MOVEFILE_REPLACE_EXISTING */) != 0;
+#else
+  return rename(src, dst) == 0;
+#endif
+}
+
+bool Config_Save(void) {
+  size_t length;
+  char *data = (char *)ReadWholeFile(g_config_filename, &length);
+  IniDoc d = { 0 };
+  bool crlf = false;
+  if (data) {
+    char *p = data;
+    for (;;) {
+      char *nl = strchr(p, '\n');
+      if (nl) *nl = 0;
+      size_t l = strlen(p);
+      if (l && p[l - 1] == '\r') { p[l - 1] = 0; crlf = true; }
+      if (nl || *p)
+        IniDoc_Insert(&d, d.n, DupStr(p));
+      if (!nl) break;
+      p = nl + 1;
+    }
+    free(data);
+  }
+
+  char buf[256];
+  static const char *const kOutputNames[] = { "SDL", "SDL-Software", "OpenGL" };
+  snprintf(buf, sizeof(buf), "%d", g_config.fullscreen);
+  IniDoc_Set(&d, "[Graphics]", "Fullscreen", buf);
+  snprintf(buf, sizeof(buf), "%d", g_config.window_scale);
+  IniDoc_Set(&d, "[Graphics]", "WindowScale", buf);
+  IniDoc_Set(&d, "[Graphics]", "IgnoreAspectRatio", g_config.ignore_aspect_ratio ? "1" : "0");
+  IniDoc_Set(&d, "[Graphics]", "IntegerScaling", g_config.integer_scaling ? "1" : "0");
+  IniDoc_Set(&d, "[Graphics]", "NoSpriteLimits", g_config.no_sprite_limits ? "1" : "0");
+  IniDoc_Set(&d, "[Graphics]", "OutputMethod", kOutputNames[g_config.output_method <= 2 ? g_config.output_method : 0]);
+  IniDoc_Set(&d, "[Graphics]", "LinearFiltering", g_config.linear_filtering ? "1" : "0");
+  IniDoc_Set(&d, "[Graphics]", "VSync", g_config.vsync ? "1" : "0");
+  IniDoc_Set(&d, "[Graphics]", "ShowFPS", g_config.show_fps ? "1" : "0");
+
+  snprintf(buf, sizeof(buf), "%d", g_config.volume);
+  IniDoc_Set(&d, "[Sound]", "Volume", buf);
+  snprintf(buf, sizeof(buf), "%d", g_config.audio_freq);
+  IniDoc_Set(&d, "[Sound]", "AudioFreq", buf);
+  snprintf(buf, sizeof(buf), "%d", g_config.audio_samples);
+  IniDoc_Set(&d, "[Sound]", "AudioSamples", buf);
+
+  IniDoc_Set(&d, "[General]", "Autosave", g_config.autosave ? "1" : "0");
+  IniDoc_Set(&d, "[General]", "PauseOnFocusLoss", g_config.pause_on_focus_loss ? "1" : "0");
+
+  // Control lines are only rewritten when changed, so hand-edited layouts
+  // (e.g. a different player 2 gamepad layout) are left alone otherwise.
+  if (g_keys_dirty) {
+    buf[0] = 0;
+    for (int i = 0; i < 12; i++) {
+      size_t l = strlen(buf);
+      snprintf(buf + l, sizeof(buf) - l, "%s%s", i ? ", " : "", Config_ControlKeyName(i));
+    }
+    IniDoc_Set(&d, "[KeyMap]", "Controls", buf);
+  }
+  if (g_pad_dirty) {
+    buf[0] = 0;
+    for (int i = 0; i < 12; i++) {
+      int b = Config_GetPadButton(i);
+      size_t l = strlen(buf);
+      snprintf(buf + l, sizeof(buf) - l, "%s%s", i ? ", " : "", b >= 0 ? kPadButtonIniNames[b] : "");
+    }
+    IniDoc_Set(&d, "[GamepadMap]", "Controls", buf);
+    IniDoc_Set(&d, "[GamepadMap]", "ControlsP2", buf);
+  }
+
+  // Write to a temporary file and swap it in, so a crash can't leave a half-written .ini.
+  char tmp_name[sizeof(g_config_filename) + 8];
+  snprintf(tmp_name, sizeof(tmp_name), "%s.tmp", g_config_filename);
+  FILE *f = fopen(tmp_name, "wb");
+  bool ok = f != NULL;
+  for (int i = 0; i < d.n; i++) {
+    if (f) {
+      fputs(d.lines[i], f);
+      fputs(crlf ? "\r\n" : "\n", f);
+    }
+    free(d.lines[i]);
+  }
+  free(d.lines);
+  if (f && fclose(f) != 0)
+    ok = false;
+  if (ok)
+    ok = ReplaceFile_(tmp_name, g_config_filename);
+  if (!ok)
+    remove(tmp_name);
+  if (ok)
+    g_keys_dirty = g_pad_dirty = false;
+  return ok;
 }

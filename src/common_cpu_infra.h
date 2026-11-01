@@ -22,6 +22,9 @@ typedef void RunOneFrameOfGameFunc(void);
 typedef void FixSnapshotForCompareFunc(Snapshot *b, Snapshot *a);
 
 void RtlRunFrameCompare(void);
+// true: also run the original ROM code under emulation every frame and compare (debugging).
+// false: run only the C reimplementation, which gameplay modifications require.
+void RtlSetVerifyAgainstRom(bool enabled);
 
 typedef struct RtlGameInfo {
   const char *title;

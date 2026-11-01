@@ -225,6 +225,7 @@ void ppu_runLine(Ppu* ppu, int line);
 uint8_t ppu_read(Ppu* ppu, uint8_t adr);
 void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val);
 void ppu_saveload(Ppu *ppu, SaveLoadInfo *sli);
+extern bool g_ppu_no_sprite_limits;  // ignore the 32 sprite / 34 tile per line limits
 void PpuBeginDrawing(Ppu *ppu, uint8_t *pixels, size_t pitch, uint32_t render_flags);
 
 int PpuGetCurrentRenderScale(Ppu *ppu, uint32_t render_flags);

@@ -56,6 +56,8 @@ void ppu_saveload(Ppu *ppu, SaveLoadInfo *sli) {
   sli->func(sli, &ppu->cgram, PPU_SAVESTATE_MEM_SIZE);
 }
 
+bool g_ppu_no_sprite_limits;
+
 void PpuBeginDrawing(Ppu *ppu, uint8_t *pixels, size_t pitch, uint32_t render_flags) {
   ppu->renderPitch = (uint)pitch;
   ppu->renderBuffer = pixels;
@@ -778,7 +780,8 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
         spritesFound++;
         if(spritesFound > 32) {
           ppu->rangeOver = true;
-          break;
+          if (!g_ppu_no_sprite_limits)
+            break;
         }
         // update row according to obj-interlace
         if(PPU_objInterlace(ppu)) row = row * 2 + (ppu->evenFrame ? 0 : 1);
@@ -800,7 +803,8 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
             tilesFound++;
             if(tilesFound > 34) {
               ppu->timeOver = true;
-              break;
+              if (!g_ppu_no_sprite_limits)
+                break;
             }
             // figure out which tile this uses, looping within 16x16 pages, and get it's data
             int usedCol = oam1 & 0x4000 ? spriteSize - 1 - col : col;
@@ -823,7 +827,7 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
 
           }
         }
-        if(tilesFound > 34) break; // break out of sprite-loop if max tiles found
+        if(tilesFound > 34 && !g_ppu_no_sprite_limits) break; // break out of sprite-loop if max tiles found
       }
     }
     index += 2;

@@ -23,6 +23,7 @@
 #include "config.h"
 #include "util.h"
 #include "smw_spc_player.h"
+#include "settings_menu.h"
 
 #include "snes/snes.h"
 #ifdef __SWITCH__
@@ -38,6 +39,7 @@ typedef struct GamepadInfo {
   uint8 axis_buttons;
   uint16 last_cmd[kGamepadBtn_Count];
   Sint16 last_axis_x, last_axis_y;
+  uint8 menu_triggers;  // trigger state while the options menu is open (bit0 = L2, bit1 = R2)
 } GamepadInfo;
 
 
@@ -74,7 +76,7 @@ enum {
   kDefaultSamples = 2048,
 };
 
-static const char kWindowTitle[] = "SMW";
+static const char kWindowTitle[] = "Super Mario World";
 static uint32 g_win_flags = SDL_WINDOW_RESIZABLE;
 static SDL_Window *g_window;
 
@@ -89,6 +91,15 @@ static int g_sdl_audio_mixer_volume = SDL_MIX_MAXVOLUME;
 static struct RendererFuncs g_renderer_funcs;
 
 static GamepadInfo g_gamepad[2];
+static bool g_running = true;
+static bool g_focus_paused;
+static int g_real_fps;
+static uint8 g_active_output_method;
+static void DrawMenuFrame(void);
+static void OpenSettingsMenu(void);
+static void CloseSettingsMenu(void);
+static void ReleaseAllInputs(void);
+static uint32 GetMenuHeldDirs(void);
 
 extern Snes *g_snes;
 
@@ -108,9 +119,28 @@ static GamepadInfo *GetGamepadInfo(SDL_JoystickID id) {
     (g_gamepad[1].joystick_id == id) ? &g_gamepad[1] : NULL;
 }
 
+int Platform_GetMaxWindowScale(void) {
+  int screen = SDL_GetWindowDisplayIndex(g_window);
+  if (screen < 0) screen = 0;
+  SDL_Rect bounds;
+  int bt = -1, bl, bb, br;
+  if (SDL_GetDisplayUsableBounds(screen, &bounds) != 0)
+    return kMaxWindowScale;
+  if (SDL_GetWindowBordersSize(g_window, &bt, &bl, &bb, &br) != 0) {
+    bl = br = bb = 1;
+    bt = 31;
+  }
+  int mw = (bounds.w - bl - br + g_snes_width / 4) / g_snes_width;
+  int mh = (bounds.h - bt - bb + g_snes_height / 4) / g_snes_height;
+  return IntMax(IntMin(IntMin(mw, mh), kMaxWindowScale), 1);
+}
+
 void ChangeWindowScale(int scale_step) {
   if ((SDL_GetWindowFlags(g_window) & (SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_MAXIMIZED)) != 0)
     return;
+  int old_x, old_y, old_w, old_h;
+  SDL_GetWindowPosition(g_window, &old_x, &old_y);
+  SDL_GetWindowSize(g_window, &old_w, &old_h);
   int screen = SDL_GetWindowDisplayIndex(g_window);
   if (screen < 0) screen = 0;
   int max_scale = kMaxWindowScale;
@@ -136,10 +166,10 @@ void ChangeWindowScale(int scale_step) {
 
   //SDL_RenderSetLogicalSize(g_renderer, w, h);
   SDL_SetWindowSize(g_window, w, h);
+  g_config.window_scale = new_scale;
   if (bt >= 0) {
-    // Center the window on top of the mouse
-    int mx, my;
-    SDL_GetGlobalMouseState(&mx, &my);
+    // Keep the window centered where it was
+    int mx = old_x + old_w / 2, my = old_y + old_h / 2;
     int wx = IntMax(IntMin(mx - w / 2, bounds.x + bounds.w - bl - br - w), bounds.x + bl);
     int wy = IntMax(IntMin(my - h / 2, bounds.y + bounds.h - bt - bb - h), bounds.y + bt);
     SDL_SetWindowPosition(g_window, wx, wy);
@@ -208,6 +238,8 @@ static void DrawPpuFrameWithPerf(void) {
   }
   if (g_display_perf)
     RenderNumber(pixel_buffer + pitch * render_scale, pitch, g_curr_fps, render_scale == 4);
+  else if (g_config.show_fps)
+    RenderNumber(pixel_buffer + pitch * render_scale, pitch, g_real_fps, render_scale == 4);
 
   if (g_got_mismatch_count)
     RenderNumber(pixel_buffer + pitch * render_scale, pitch, g_got_mismatch_count, render_scale == 4);
@@ -220,6 +252,39 @@ static uint8 *g_audiobuffer, *g_audiobuffer_cur, *g_audiobuffer_end;
 static int g_frames_per_block;
 static uint8 g_audio_channels;
 static SDL_AudioDeviceID g_audio_device;
+static void SDLCALL AudioCallback(void *userdata, Uint8 *stream, int len);
+
+static bool OpenAudio(void) {
+  SDL_AudioSpec want = { 0 }, have;
+  want.freq = g_config.audio_freq;
+  want.format = AUDIO_S16;
+  want.channels = 2;
+  want.samples = g_config.audio_samples;
+  want.callback = &AudioCallback;
+  g_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+  if (g_audio_device == 0) {
+    printf("Failed to open audio device: %s\n", SDL_GetError());
+    return false;
+  }
+  SDL_LockMutex(g_audio_mutex);
+  g_audio_channels = 2;
+  g_frames_per_block = (534 * have.freq) / 32000;
+  free(g_audiobuffer);
+  g_audiobuffer = (uint8 *)calloc(g_frames_per_block * have.channels * sizeof(int16), 1);
+  g_audiobuffer_cur = g_audiobuffer_end = g_audiobuffer;
+  SDL_UnlockMutex(g_audio_mutex);
+  return true;
+}
+
+void Platform_ReopenAudio(void) {
+  if (g_audio_device) {
+    SDL_PauseAudioDevice(g_audio_device, 1);
+    SDL_CloseAudioDevice(g_audio_device);
+    g_audio_device = 0;
+  }
+  // The device comes back paused; the main loop unpauses it when the menu closes.
+  OpenAudio();
+}
 
 void RtlApuLock(void) {
   SDL_LockMutex(g_audio_mutex);
@@ -263,7 +328,7 @@ static bool SdlRenderer_Init(SDL_Window *window) {
 
   SDL_Renderer *renderer = SDL_CreateRenderer(g_window, -1,
                                               g_config.output_method == kOutputMethod_SDLSoftware ? SDL_RENDERER_SOFTWARE :
-                                              SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+                                              SDL_RENDERER_ACCELERATED | (g_config.vsync ? SDL_RENDERER_PRESENTVSYNC : 0));
   if (renderer == NULL) {
     printf("Failed to create renderer: %s\n", SDL_GetError());
     return false;
@@ -362,10 +427,6 @@ int main(int argc, char** argv) {
     g_config.extend_y * kPpuRenderFlags_Height240 |
     g_config.no_sprite_limits * kPpuRenderFlags_NoSpriteLimits;
 
-  if (g_config.fullscreen == 1)
-    g_win_flags ^= SDL_WINDOW_FULLSCREEN_DESKTOP;
-  else if (g_config.fullscreen == 2)
-    g_win_flags ^= SDL_WINDOW_FULLSCREEN;
 
   // Window scale (1=100%, 2=200%, 3=300%, etc.)
   g_current_window_scale = (g_config.window_scale == 0) ? 2 : IntMin(g_config.window_scale, kMaxWindowScale);
@@ -383,6 +444,11 @@ int main(int argc, char** argv) {
     g_config.audio_samples = kDefaultSamples;
 
   SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+#ifdef _WIN32
+  // Use the icon embedded in smw.exe for the title bar and taskbar.
+  SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
+  SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
+#endif
 
   // set up SDL
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
@@ -394,6 +460,9 @@ int main(int argc, char** argv) {
   int window_width = custom_size ? g_config.window_width : g_current_window_scale * g_snes_width;
   int window_height = custom_size ? g_config.window_height : g_current_window_scale * g_snes_height;
 
+  g_active_output_method = g_config.output_method;
+  g_ppu_no_sprite_limits = g_config.no_sprite_limits;
+  g_sdl_audio_mixer_volume = g_config.volume * SDL_MIX_MAXVOLUME / 100;
   if (g_config.output_method == kOutputMethod_OpenGL) {
     g_win_flags |= SDL_WINDOW_OPENGL;
     OpenGLRenderer_Create(&g_renderer_funcs);
@@ -409,6 +478,9 @@ int main(int argc, char** argv) {
       goto error_reading;
   }
 
+  // The C code alone drives the game so gameplay changes take effect. Verification
+  // against the original ROM (which overrides the C result on any difference) is opt-in.
+  RtlSetVerifyAgainstRom(g_config.verify_against_rom);
   Snes *snes = SnesInit(kRom, kRom_SIZE);
   if (snes == NULL) {
 error_reading:;
@@ -432,6 +504,10 @@ error_reading:;
 
   if (!g_renderer_funcs.Initialize(window))
     return 1;
+  Platform_ApplyVideoSettings();
+  if (g_config.fullscreen == 1 || g_config.fullscreen == 2)
+    Platform_SetDisplayMode(g_config.fullscreen);
+  SettingsMenu_Init();
 
   g_audio_mutex = SDL_CreateMutex();
   if (!g_audio_mutex) Die("No mutex");
@@ -444,23 +520,8 @@ error_reading:;
 
   g_spc_player->initialize(g_spc_player);
 
-  bool enable_audio = true;
-  if (enable_audio) {
-    SDL_AudioSpec want = { 0 }, have;
-    want.freq = g_config.audio_freq;
-    want.format = AUDIO_S16;
-    want.channels = 2;
-    want.samples = g_config.audio_samples;
-    want.callback = &AudioCallback;
-    g_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (g_audio_device == 0) {
-      printf("Failed to open audio device: %s\n", SDL_GetError());
-      return 1;
-    }
-    g_audio_channels = 2;
-    g_frames_per_block = (534 * have.freq) / 32000;
-    g_audiobuffer = (uint8 *)calloc(g_frames_per_block * have.channels * sizeof(int16), 1);
-  }
+  if (!OpenAudio())
+    return 1;
 
   PpuBeginDrawing(g_snes->ppu, g_pixels, 256 * 4, 0);
   PpuBeginDrawing(g_my_ppu, g_my_pixels, 256 * 4, 0);
@@ -477,7 +538,7 @@ error_reading:;
   if (g_config.autosave)
     HandleCommand(kKeys_Load + 0, true);
 
-  bool running = true;
+  uint32 fps_tick = SDL_GetTicks(), fps_frames = 0;
   uint32 lastTick = SDL_GetTicks();
   uint32 curTick = 0;
   uint32 frameCtr = 0;
@@ -485,7 +546,7 @@ error_reading:;
   bool has_bug_in_title = false;
   GamepadInfo *gi;
 
-  while (running) {
+  while (g_running) {
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
@@ -502,19 +563,62 @@ error_reading:;
         break;
       case SDL_CONTROLLERAXISMOTION:
         gi = GetGamepadInfo(event.caxis.which);
-        if (gi)
+        if (!gi)
+          break;
+        if (!SettingsMenu_IsOpen()) {
           HandleGamepadAxisInput(gi, event.caxis.axis, event.caxis.value);
+        } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ||
+                   event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+          // Analog triggers act as L2/R2 buttons (so they can be bound), with hysteresis.
+          int bit = event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? 1 : 2;
+          if (event.caxis.value >= 16000 && !(gi->menu_triggers & bit)) {
+            gi->menu_triggers |= bit;
+            SettingsMenu_OnGamepadButton(bit == 1 ? kGamepadBtn_L2 : kGamepadBtn_R2, true);
+          } else if (event.caxis.value < 12000) {
+            gi->menu_triggers &= ~bit;
+          }
+        }
         break;
       case SDL_CONTROLLERBUTTONDOWN:
       case SDL_CONTROLLERBUTTONUP: {
         gi = GetGamepadInfo(event.cbutton.which);
         if (gi) {
-          int b = RemapSdlButton(event.cbutton.button);
-          if (b >= 0)
-            HandleGamepadInput(gi, b, event.type == SDL_CONTROLLERBUTTONDOWN);
+          bool down = event.type == SDL_CONTROLLERBUTTONDOWN;
+          int raw = event.cbutton.button;
+          // PS / Xbox guide button, touchpad click or share/mic button opens the options menu
+          if (raw == SDL_CONTROLLER_BUTTON_GUIDE || raw == SDL_CONTROLLER_BUTTON_TOUCHPAD ||
+              raw == SDL_CONTROLLER_BUTTON_MISC1) {
+            if (down) {
+              if (SettingsMenu_IsOpen())
+                CloseSettingsMenu();
+              else
+                OpenSettingsMenu();
+            }
+            break;
+          }
+          int b = RemapSdlButton(raw);
+          if (b < 0)
+            break;
+          if (SettingsMenu_IsOpen()) {
+            SettingsMenu_OnGamepadButton(b, down);
+            if (!SettingsMenu_IsOpen())
+              CloseSettingsMenu();
+          } else {
+            HandleGamepadInput(gi, b, down);
+          }
         }
         break;
       }
+      case SDL_WINDOWEVENT:
+        if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+          if (g_config.pause_on_focus_loss) {
+            g_focus_paused = true;
+            ReleaseAllInputs();
+          }
+        } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+          g_focus_paused = false;
+        }
+        break;
       case SDL_MOUSEWHEEL:
         if (SDL_GetModState() & KMOD_CTRL && event.wheel.y != 0)
           ChangeWindowScale(event.wheel.y > 0 ? 1 : -1);
@@ -528,24 +632,55 @@ error_reading:;
         }
         break;
       case SDL_KEYDOWN:
-        HandleInput(event.key.keysym.sym, event.key.keysym.mod, true);
+      case SDL_KEYUP: {
+        bool down = event.type == SDL_KEYDOWN;
+        SDL_Keycode sym = event.key.keysym.sym;
+        int cmd = FindCmdForSdlKey(sym, (SDL_Keymod)event.key.keysym.mod);
+        if (SettingsMenu_IsOpen()) {
+          if (cmd == kKeys_Fullscreen && down) {
+            HandleCommand(cmd, true);
+            break;
+          }
+          SettingsMenu_OnKey(sym, down, event.key.repeat != 0, cmd);
+          if (!SettingsMenu_IsOpen())
+            CloseSettingsMenu();
+        } else if (sym == SDLK_ESCAPE && cmd == 0) {
+          if (down && !event.key.repeat)
+            OpenSettingsMenu();
+        } else if (sym == SDLK_F11 && cmd == 0) {
+          if (down && !event.key.repeat)
+            HandleCommand(kKeys_Fullscreen, true);
+        } else {
+          HandleInput(sym, event.key.keysym.mod, down);
+        }
         break;
-      case SDL_KEYUP:
-        HandleInput(event.key.keysym.sym, event.key.keysym.mod, false);
-        break;
+      }
       case SDL_QUIT:
-        running = false;
+        g_running = false;
         break;
       }
     }
 
-    if (g_paused != audiopaused) {
-      audiopaused = g_paused;
+    uint8 want_audio_paused = g_paused || g_focus_paused || SettingsMenu_IsOpen();
+    if (want_audio_paused != audiopaused) {
+      audiopaused = want_audio_paused;
       if (g_audio_device)
         SDL_PauseAudioDevice(g_audio_device, audiopaused);
     }
 
-    if (g_paused) {
+    if (SettingsMenu_IsOpen()) {
+      SettingsMenu_Tick(GetMenuHeldDirs());
+      if (SettingsMenu_IsOpen()) {
+        DrawMenuFrame();
+        fps_frames++;
+      } else {
+        CloseSettingsMenu();
+      }
+      SDL_Delay(g_config.vsync ? 1 : 16);
+      continue;
+    }
+
+    if (g_paused || g_focus_paused) {
       SDL_Delay(16);
       continue;
     }
@@ -561,8 +696,15 @@ error_reading:;
     frameCtr++;
     g_snes->disableRender = (g_turbo ^ (is_replay & g_replay_turbo)) && (frameCtr & (g_turbo ? 0xf : 0x7f)) != 0;
 
-    if (!g_snes->disableRender)
+    if (!g_snes->disableRender) {
       DrawPpuFrameWithPerf();
+      fps_frames++;
+    }
+    if (SDL_GetTicks() - fps_tick >= 1000) {
+      g_real_fps = fps_frames;
+      fps_frames = 0;
+      fps_tick = SDL_GetTicks();
+    }
 
     bool want_bug_in_title = (g_got_mismatch_count != 0);
     if (want_bug_in_title != has_bug_in_title) {
@@ -708,10 +850,10 @@ static void HandleCommand(uint32 j, bool pressed) {
     case kKeys_ClearKeyLog: RtlClearKeyLog(); break;
     case kKeys_StopReplay: RtlStopReplay(); break;
     case kKeys_Fullscreen:
-      g_win_flags ^= SDL_WINDOW_FULLSCREEN_DESKTOP;
-      SDL_SetWindowFullscreen(g_window, g_win_flags & SDL_WINDOW_FULLSCREEN_DESKTOP);
-      g_cursor = !g_cursor;
-      SDL_ShowCursor(g_cursor);
+      if (Platform_GetDisplayMode() != 0)
+        Platform_SetDisplayMode(0);
+      else
+        Platform_SetDisplayMode(g_config.fullscreen == 2 ? 2 : 1);
       break;
     case kKeys_Reset:
       RtlReset(1);
@@ -746,10 +888,37 @@ static void HandleCommand(uint32 j, bool pressed) {
   }
 }
 
+// Remembers which command each held key triggered, so the key-up goes to the
+// same command even if modifier keys changed in between (no stuck buttons).
+typedef struct HeldKey { SDL_Keycode key; uint16 cmd; } HeldKey;
+static HeldKey g_held_keys[32];
+
 static void HandleInput(int keyCode, int keyMod, bool pressed) {
+  HeldKey *slot = NULL, *free_slot = NULL;
+  for (int i = 0; i < countof(g_held_keys); i++) {
+    if (g_held_keys[i].cmd && g_held_keys[i].key == keyCode)
+      slot = &g_held_keys[i];
+    else if (!g_held_keys[i].cmd && !free_slot)
+      free_slot = &g_held_keys[i];
+  }
+  if (!pressed) {
+    if (slot) {
+      int j = slot->cmd;
+      slot->cmd = 0;
+      HandleCommand(j, false);
+    }
+    return;
+  }
+  if (slot)  // key repeat: re-send the same command
+    return (void)HandleCommand(slot->cmd, true);
   int j = FindCmdForSdlKey(keyCode, (SDL_Keymod)keyMod);
-  if (j != 0)
-    HandleCommand(j, pressed);
+  if (j == 0)
+    return;
+  if (free_slot) {
+    free_slot->key = keyCode;
+    free_slot->cmd = j;
+  }
+  HandleCommand(j, true);
 }
 
 static uint32 GetActiveControllers() {
@@ -831,6 +1000,7 @@ static void HandleVolumeAdjustment(int volume_adjustment) {
   printf("[System Volume]=%i\n", new_volume);
 #else
   g_sdl_audio_mixer_volume = IntMin(IntMax(0, g_sdl_audio_mixer_volume + volume_adjustment * (SDL_MIX_MAXVOLUME >> 4)), SDL_MIX_MAXVOLUME);
+  g_config.volume = (g_sdl_audio_mixer_volume * 100 + SDL_MIX_MAXVOLUME / 2) / SDL_MIX_MAXVOLUME;
   printf("[SDL mixer volume]=%i\n", g_sdl_audio_mixer_volume);
 #endif
 }
@@ -974,4 +1144,164 @@ static void SwitchDirectory(void) {
     while (pos != 0 && buf[pos] != '/' && buf[pos] != '\\')
       pos--;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Options menu glue
+
+int Platform_GetDisplayMode(void) {
+  uint32 f = SDL_GetWindowFlags(g_window);
+  if ((f & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP)
+    return 1;
+  if (f & SDL_WINDOW_FULLSCREEN)
+    return 2;
+  return 0;
+}
+
+void Platform_SetDisplayMode(int mode) {
+  uint32 flag = mode == 1 ? SDL_WINDOW_FULLSCREEN_DESKTOP : mode == 2 ? SDL_WINDOW_FULLSCREEN : 0;
+  if (mode == 2) {
+    // Exclusive fullscreen at the desktop resolution instead of the window's size.
+    SDL_DisplayMode dm;
+    int idx = SDL_GetWindowDisplayIndex(g_window);
+    if (SDL_GetDesktopDisplayMode(idx < 0 ? 0 : idx, &dm) == 0)
+      SDL_SetWindowDisplayMode(g_window, &dm);
+  }
+  if (Platform_GetDisplayMode() != 0 && mode != 0 && Platform_GetDisplayMode() != mode)
+    SDL_SetWindowFullscreen(g_window, 0);  // switch fullscreen types cleanly
+  SDL_SetWindowFullscreen(g_window, flag);
+  g_win_flags = (g_win_flags & ~SDL_WINDOW_FULLSCREEN_DESKTOP) | flag;
+  if (mode != 0)
+    g_config.fullscreen = mode;
+  else
+    g_config.fullscreen = 0;
+  g_cursor = (mode == 0);
+  SDL_ShowCursor(g_cursor);
+}
+
+int Platform_GetWindowScale(void) {
+  return g_current_window_scale;
+}
+
+void Platform_SetWindowScale(int scale) {
+  ChangeWindowScale(scale - g_current_window_scale);
+}
+
+void Platform_ApplyVideoSettings(void) {
+  if (g_renderer) {
+    if (g_config.ignore_aspect_ratio)
+      SDL_RenderSetLogicalSize(g_renderer, 0, 0);
+    else
+      SDL_RenderSetLogicalSize(g_renderer, g_snes_width, g_snes_height);
+    SDL_RenderSetIntegerScale(g_renderer, (g_config.integer_scaling && !g_config.ignore_aspect_ratio) ? SDL_TRUE : SDL_FALSE);
+    if (g_texture)
+      SDL_SetTextureScaleMode(g_texture, g_config.linear_filtering ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+    if (g_active_output_method != kOutputMethod_SDLSoftware)
+      SDL_RenderSetVSync(g_renderer, g_config.vsync);
+  } else if (g_active_output_method == kOutputMethod_OpenGL) {
+    SDL_GL_SetSwapInterval(g_config.vsync ? 1 : 0);
+  }
+}
+
+void Platform_ApplySpriteLimit(void) {
+  g_ppu_no_sprite_limits = g_config.no_sprite_limits;
+  g_ppu_render_flags = (g_ppu_render_flags & ~kPpuRenderFlags_NoSpriteLimits) |
+      (g_config.no_sprite_limits ? kPpuRenderFlags_NoSpriteLimits : 0);
+}
+
+void Platform_ApplyVolume(void) {
+  g_sdl_audio_mixer_volume = g_config.volume * SDL_MIX_MAXVOLUME / 100;
+}
+
+void Platform_ResetGame(void) {
+  RtlReset(1);
+}
+
+void Platform_Quit(void) {
+  g_running = false;
+}
+
+static void ReleaseAllInputs(void) {
+  g_input_state = 0;
+  memset(g_held_keys, 0, sizeof(g_held_keys));
+  g_turbo = 0;
+  for (int i = 0; i < 2; i++) {
+    GamepadInfo *gi = &g_gamepad[i];
+    gi->modifiers = 0;
+    // Triggers already held count as pressed, so they don't fire again in the menu.
+    gi->menu_triggers = 3;
+    gi->axis_buttons = 0;
+    gi->last_axis_x = gi->last_axis_y = 0;
+    memset(gi->last_cmd, 0, sizeof(gi->last_cmd));
+  }
+}
+
+int Platform_GetPadFamily(void) {
+  for (int i = 0; i < 2; i++) {
+    if (g_gamepad[i].joystick_id == -1)
+      continue;
+    SDL_GameController *gc = SDL_GameControllerFromInstanceID(g_gamepad[i].joystick_id);
+    if (!gc)
+      continue;
+    switch (SDL_GameControllerGetType(gc)) {
+    case SDL_CONTROLLER_TYPE_XBOX360: return kPadFamily_Xbox360;
+    case SDL_CONTROLLER_TYPE_XBOXONE: return kPadFamily_XboxOne;
+    case SDL_CONTROLLER_TYPE_PS3: return kPadFamily_PS3;
+    case SDL_CONTROLLER_TYPE_PS4: return kPadFamily_PS4;
+    case SDL_CONTROLLER_TYPE_PS5: return kPadFamily_PS5;
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+      return kPadFamily_Nintendo;
+    default: return kPadFamily_Generic;
+    }
+  }
+  return kPadFamily_None;
+}
+
+static void OpenSettingsMenu(void) {
+  ReleaseAllInputs();
+  uint8 *ppu_pixels = g_other_image ? g_my_pixels : g_pixels;
+  SettingsMenu_Open(ppu_pixels, g_snes_width, g_snes_height);
+}
+
+static void CloseSettingsMenu(void) {
+  SettingsMenu_Close();
+  ReleaseAllInputs();
+}
+
+static uint32 GetMenuHeldDirs(void) {
+  uint32 dirs = 0;
+  for (int i = 0; i < 2; i++) {
+    if (g_gamepad[i].joystick_id == -1)
+      continue;
+    SDL_GameController *gc = SDL_GameControllerFromInstanceID(g_gamepad[i].joystick_id);
+    if (!gc)
+      continue;
+    if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_UP)) dirs |= kMenuNav_Up;
+    if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_DOWN)) dirs |= kMenuNav_Down;
+    if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_LEFT)) dirs |= kMenuNav_Left;
+    if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) dirs |= kMenuNav_Right;
+    int ax = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
+    int ay = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+    // Use the dominant stick axis so diagonals don't move two ways at once.
+    if (ay * ay > ax * ax && (ay < -16000 || ay > 16000))
+      dirs |= ay < 0 ? kMenuNav_Up : kMenuNav_Down;
+    else if (ax < -16000 || ax > 16000)
+      dirs |= ax < 0 ? kMenuNav_Left : kMenuNav_Right;
+  }
+  return dirs;
+}
+
+static void DrawMenuFrame(void) {
+  uint8 *pixel_buffer = 0;
+  int pitch = 0;
+  g_renderer_funcs.BeginDraw(g_snes_width, g_snes_height, &pixel_buffer, &pitch);
+  if (!pixel_buffer)
+    return;
+  SettingsMenu_Draw(pixel_buffer, pitch, g_snes_width, g_snes_height);
+  if (g_config.show_fps)
+    RenderNumber(pixel_buffer + pitch, pitch, g_real_fps, false);
+  g_renderer_funcs.EndDraw();
 }

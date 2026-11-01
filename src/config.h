@@ -69,6 +69,7 @@ typedef struct Config {
   bool resume_msu;
   bool disable_frame_delay;
   bool save_playthrough;
+  bool verify_against_rom;
   uint8 msuvolume;
   uint32 features0;
 
@@ -78,6 +79,13 @@ typedef struct Config {
   const char *msu_path;
 
   bool enable_gamepad[2];
+
+  // Native PC settings (editable from the in-game options menu)
+  bool integer_scaling;
+  bool vsync;
+  bool show_fps;
+  bool pause_on_focus_loss;
+  uint8 volume;  // 0..100
 
   // Which players have keyboard controls
   uint8 has_keyboard_controls;
@@ -113,5 +121,18 @@ enum {
 extern Config g_config;
 
 void ParseConfigFile(const char *filename);
+
+// Options menu support
+uint16 Config_GetControlKey(int button);           // button 0..11 (Up..R), returns packed key or 0
+// Rebinds, swapping with another SNES button if needed. Returns the non-SNES command
+// that previously used the key (now unbound), 0 if none, or -1 if the key can't be used.
+int Config_SetControlKey(int button, SDL_Keycode key);
+void Config_ResetControlKeys(void);
+uint16 Config_PackSdlKey(SDL_Keycode code);
+const char *Config_ControlKeyName(int button);     // SDL key name ("" if unbound)
+bool Config_Save(void);                            // writes settings back to the loaded .ini
+int Config_GetPadButton(int button);                // SNES button 0..11 -> kGamepadBtn_* (or -1)
+void Config_SetPadButton(int button, int pad_btn);  // rebinds for both gamepads, swapping if needed
+void Config_ResetPadButtons(void);
 int FindCmdForSdlKey(SDL_Keycode code, SDL_Keymod mod);
 int FindCmdForGamepadButton(int button, uint32 modifiers);

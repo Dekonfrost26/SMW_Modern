@@ -39,7 +39,7 @@ static bool OpenGLRenderer_Init(SDL_Window *window) {
   SDL_GLContext context = SDL_GL_CreateContext(window);
   (void)context;
 
-  SDL_GL_SetSwapInterval(1);
+  SDL_GL_SetSwapInterval(g_config.vsync ? 1 : 0);
   ogl_LoadFunctions();
 
   if (!ogl_IsVersionGEQ(3, 3))
@@ -166,7 +166,13 @@ static void OpenGLRenderer_EndDraw(void) {
   
   int viewport_width = drawable_width, viewport_height = drawable_height;
 
-  if (!g_config.ignore_aspect_ratio) {
+  if (g_config.integer_scaling && !g_config.ignore_aspect_ratio) {
+    int sx = drawable_width / g_draw_width, sy = drawable_height / g_draw_height;
+    int scale = sx < sy ? sx : sy;
+    if (scale < 1) scale = 1;
+    viewport_width = g_draw_width * scale;
+    viewport_height = g_draw_height * scale;
+  } else if (!g_config.ignore_aspect_ratio) {
     if (viewport_width * g_draw_height < viewport_height * g_draw_width)
       viewport_height = viewport_width * g_draw_height / g_draw_width;  // limit height
     else
@@ -174,7 +180,7 @@ static void OpenGLRenderer_EndDraw(void) {
   }
 
   int viewport_x = (drawable_width - viewport_width) >> 1;
-  int viewport_y = (viewport_height - viewport_height) >> 1;
+  int viewport_y = (drawable_height - viewport_height) >> 1;
 
   glBindTexture(GL_TEXTURE_2D, g_texture.gl_texture);
   if (g_draw_width == g_texture.width && g_draw_height == g_texture.height) {

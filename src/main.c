@@ -63,8 +63,9 @@ bool g_new_ppu = true;
 bool g_other_image = true;
 struct SpcPlayer *g_spc_player;
 
-static uint8_t g_pixels[256 * 4 * 240];
-static uint8_t g_my_pixels[256 * 4 * 240];
+// Room for the widest widescreen setting (see kPpuXPixels)
+static uint8_t g_pixels[kPpuXPixels * 4 * 240];
+static uint8_t g_my_pixels[kPpuXPixels * 4 * 240];
 
 int g_got_mismatch_count;
 
@@ -100,6 +101,7 @@ static void OpenSettingsMenu(void);
 static void CloseSettingsMenu(void);
 static void ReleaseAllInputs(void);
 static uint32 GetMenuHeldDirs(void);
+static void ApplyPpuGeometry(void);
 
 extern Snes *g_snes;
 
@@ -211,7 +213,7 @@ void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
   
   uint8 *ppu_pixels = g_other_image ? g_my_pixels : g_pixels;
   for (size_t y = 0, y_end = g_snes_height; y < y_end; y++)
-    memcpy((uint8 *)pixel_buffer + y * pitch, ppu_pixels + y * 256 * 4, 256 * 4);
+    memcpy((uint8 *)pixel_buffer + y * pitch, ppu_pixels + y * g_snes_width * 4, g_snes_width * 4);
 }
 
 static void DrawPpuFrameWithPerf(void) {
@@ -420,6 +422,8 @@ int main(int argc, char** argv) {
   LoadAssets();
 
   g_gamepad[0].joystick_id = g_gamepad[1].joystick_id = -1;
+  if (g_config.extended_aspect_ratio > kPpuExtraLeftRight)
+    g_config.extended_aspect_ratio = kPpuExtraLeftRight;
   g_snes_width = (g_config.extended_aspect_ratio * 2 + 256);
   g_snes_height = 224;// (g_config.extend_y ? 240 : 224);
   g_ppu_render_flags = g_config.new_renderer * kPpuRenderFlags_NewRenderer |
@@ -523,8 +527,7 @@ error_reading:;
   if (!OpenAudio())
     return 1;
 
-  PpuBeginDrawing(g_snes->ppu, g_pixels, 256 * 4, 0);
-  PpuBeginDrawing(g_my_ppu, g_my_pixels, 256 * 4, 0);
+  ApplyPpuGeometry();
 
   if (g_config.save_playthrough)
     MkDir("playthrough");
@@ -1201,6 +1204,42 @@ void Platform_ApplyVideoSettings(void) {
   } else if (g_active_output_method == kOutputMethod_OpenGL) {
     SDL_GL_SetSwapInterval(g_config.vsync ? 1 : 0);
   }
+}
+
+static void ApplyPpuGeometry(void) {
+  int extra = (g_snes_width - 256) / 2;
+  g_ws_margin = extra;
+  PpuBeginDrawing(g_snes->ppu, g_pixels, g_snes_width * 4, 0);
+  PpuBeginDrawing(g_my_ppu, g_my_pixels, g_snes_width * 4, 0);
+  PpuSetExtraSideSpace(g_snes->ppu, extra, extra, extra);
+  PpuSetExtraSideSpace(g_my_ppu, extra, extra, extra);
+  memset(g_pixels, 0, sizeof(g_pixels));
+  memset(g_my_pixels, 0, sizeof(g_my_pixels));
+}
+
+int Platform_GetWidescreen(void) {
+  return (g_snes_width - 256) / 2;
+}
+
+void Platform_SetWidescreen(int extra) {
+  extra = IntMax(0, IntMin(extra, kPpuExtraLeftRight));
+  if (extra == Platform_GetWidescreen())
+    return;
+  g_config.extended_aspect_ratio = extra;
+  g_snes_width = 256 + extra * 2;
+  ApplyPpuGeometry();
+  if (g_renderer) {
+    // The SDL texture has a fixed size; make a new one.
+    SDL_Texture *t = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                       g_snes_width, g_snes_height);
+    if (t) {
+      SDL_DestroyTexture(g_texture);
+      g_texture = t;
+    }
+  }
+  Platform_ApplyVideoSettings();
+  // Keep the same window scale for the new width.
+  ChangeWindowScale(0);
 }
 
 void Platform_ApplySpriteLimit(void) {

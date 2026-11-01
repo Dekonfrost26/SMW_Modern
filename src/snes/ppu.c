@@ -31,18 +31,23 @@ void ppu_free(Ppu* ppu) {
 void ppu_copy(Ppu *ppu, Ppu *ppu_src) {
   size_t pitch = ppu->renderPitch;
   uint8_t *renderBuffer = ppu->renderBuffer;
+  uint8_t el = ppu->extraLeftCur, er = ppu->extraRightCur, et = ppu->extraLeftRight;
   memcpy(ppu, ppu_src, sizeof(*ppu));
   ppu->renderBuffer = renderBuffer;
   ppu->renderPitch = (uint32_t)pitch;
+  // Output geometry belongs to the renderer, not to the copied state.
+  ppu->extraLeftCur = el, ppu->extraRightCur = er, ppu->extraLeftRight = et;
 }
 
 void ppu_reset(Ppu* ppu) {
   {
     size_t pitch = ppu->renderPitch;
     uint8_t *renderBuffer = ppu->renderBuffer;
+    uint8_t el = ppu->extraLeftCur, er = ppu->extraRightCur, et = ppu->extraLeftRight;
     memset(ppu, 0, sizeof(*ppu));
     ppu->renderBuffer = renderBuffer;
     ppu->renderPitch = (uint32_t)pitch;
+    ppu->extraLeftCur = el, ppu->extraRightCur = er, ppu->extraLeftRight = et;
   }
   ppu->vramIncrement = 1;
 }
@@ -57,6 +62,13 @@ void ppu_saveload(Ppu *ppu, SaveLoadInfo *sli) {
 }
 
 bool g_ppu_no_sprite_limits;
+
+void PpuSetExtraSideSpace(Ppu *ppu, int left, int right, int total) {
+  total = total < 0 ? 0 : total > kPpuExtraLeftRight ? kPpuExtraLeftRight : total;
+  ppu->extraLeftRight = total;
+  ppu->extraLeftCur = left < 0 ? 0 : left > total ? total : left;
+  ppu->extraRightCur = right < 0 ? 0 : right > total ? total : right;
+}
 
 void PpuBeginDrawing(Ppu *ppu, uint8_t *pixels, size_t pitch, uint32_t render_flags) {
   ppu->renderPitch = (uint)pitch;
@@ -89,9 +101,9 @@ void ppu_runLine(Ppu* ppu, int line) {
     if (PPU_mosaicSize(ppu) != ppu->lastMosaicModulo) {
       int mod = PPU_mosaicSize(ppu);
       ppu->lastMosaicModulo = mod;
-      for (int i = 0, j = 0; i < countof(ppu->mosaicModulo); i++) {
-        ppu->mosaicModulo[i] = i - j;
-        j = (j + 1 == mod ? 0 : j + 1);
+      for (int i = 0; i < countof(ppu->mosaicModulo); i++) {
+        int x = i - kPpuExtraLeftRight;
+        ppu->mosaicModulo[i] = x - ((x % mod) + mod) % mod;
       }
     }
 
@@ -132,9 +144,13 @@ typedef struct PpuWindows {
   uint8 bits;
 } PpuWindows;
 
+// Start of the mosaic block containing coordinate v (v may be negative in the margins)
+#define MOSAIC_START(ppu, v) ((ppu)->mosaicModulo[(v) + kPpuExtraLeftRight])
+#define LAYER_HAS_MARGINS(ppu, layer) ((layer) != 2 || (ppu)->bg3Margins)
+
 static void PpuWindows_Clear(PpuWindows *win, Ppu *ppu, uint layer) {
-  win->edges[0] = -(layer != 2 ? ppu->extraLeftCur : 0);
-  win->edges[1] = 256 + (layer != 2 ? ppu->extraRightCur : 0);
+  win->edges[0] = -(LAYER_HAS_MARGINS(ppu, layer) ? ppu->extraLeftCur : 0);
+  win->edges[1] = 256 + (LAYER_HAS_MARGINS(ppu, layer) ? ppu->extraRightCur : 0);
   win->nr = 1;
   win->bits = 0;
 }
@@ -145,25 +161,32 @@ static void PpuWindows_Calc(PpuWindows *win, Ppu *ppu, uint layer) {
   // Algorithm from Snes9x
   uint32 winflags = GET_WINDOW_FLAGS(ppu, layer);
   uint nr = 1;
-  int window_right = 256 + (layer != 2 ? ppu->extraRightCur : 0);
-  win->edges[0] = - (layer != 2 ? ppu->extraLeftCur : 0);
+  int window_right = 256 + (LAYER_HAS_MARGINS(ppu, layer) ? ppu->extraRightCur : 0);
+  win->edges[0] = - (LAYER_HAS_MARGINS(ppu, layer) ? ppu->extraLeftCur : 0);
   win->edges[1] = window_right;
   uint i, j;
   int t;
+  // Widescreen: a window that touches the left (0) or right (255) edge of the
+  // SNES screen is treated as extending through that side's margin, so a
+  // window covering the full screen still covers the full widescreen view.
+  int w1l = ppu->window1left == 0 ? win->edges[0] : ppu->window1left;
+  int w1r = ppu->window1right == 255 ? window_right : ppu->window1right + 1;
+  int w2l = ppu->window2left == 0 ? win->edges[0] : ppu->window2left;
+  int w2r = ppu->window2right == 255 ? window_right : ppu->window2right + 1;
   bool w1_ena = (winflags & kWindow1Enabled) && ppu->window1left <= ppu->window1right;
   if (w1_ena) {
-    if (ppu->window1left > win->edges[0]) {
-      win->edges[nr] = ppu->window1left;
+    if (w1l > win->edges[0]) {
+      win->edges[nr] = w1l;
       win->edges[++nr] = window_right;
     }
-    if (ppu->window1right + 1 < window_right) {
-      win->edges[nr] = ppu->window1right + 1;
+    if (w1r < window_right) {
+      win->edges[nr] = w1r;
       win->edges[++nr] = window_right;
     }
   }
   bool w2_ena = (winflags & kWindow2Enabled) && ppu->window2left <= ppu->window2right;
   if (w2_ena) {
-    for (i = 0; i <= nr && (t = ppu->window2left) != win->edges[i]; i++) {
+    for (i = 0; i <= nr && (t = w2l) != win->edges[i]; i++) {
       if (t < win->edges[i]) {
         for (j = nr++; j >= i; j--)
           win->edges[j + 1] = win->edges[j];
@@ -171,7 +194,7 @@ static void PpuWindows_Calc(PpuWindows *win, Ppu *ppu, uint layer) {
         break;
       }
     }
-    for (; i <= nr && (t = ppu->window2right + 1) != win->edges[i]; i++) {
+    for (; i <= nr && (t = w2r) != win->edges[i]; i++) {
       if (t < win->edges[i]) {
         for (j = nr++; j >= i; j--)
           win->edges[j + 1] = win->edges[j];
@@ -184,15 +207,15 @@ static void PpuWindows_Calc(PpuWindows *win, Ppu *ppu, uint layer) {
   // get a bitmap of how regions map to windows
   uint8 w1_bits = 0, w2_bits = 0;
   if (w1_ena) {
-    for (i = 0; win->edges[i] != ppu->window1left; i++);
-    for (j = i; win->edges[j] != ppu->window1right + 1; j++);
+    for (i = 0; win->edges[i] != w1l; i++);
+    for (j = i; win->edges[j] != w1r; j++);
     w1_bits = ((1 << (j - i)) - 1) << i;
   }
   if ((winflags & (kWindow1Enabled | kWindow1Inversed)) == (kWindow1Enabled | kWindow1Inversed))
     w1_bits = ~w1_bits;
   if (w2_ena) {
-    for (i = 0; win->edges[i] != ppu->window2left; i++);
-    for (j = i; win->edges[j] != ppu->window2right + 1; j++);
+    for (i = 0; win->edges[i] != w2l; i++);
+    for (j = i; win->edges[j] != w2r; j++);
     w2_bits = ((1 << (j - i)) - 1) << i;
   }
   if ((winflags & (kWindow2Enabled | kWindow2Inversed)) == (kWindow2Enabled | kWindow2Inversed))
@@ -408,7 +431,7 @@ static void PpuDrawBackground_4bpp_mosaic(Ppu *ppu, uint y, bool sub, uint layer
     return;  // layer is completely hidden
   PpuWindows win;
   IS_SCREEN_WINDOWED(ppu, sub, layer) ? PpuWindows_Calc(&win, ppu, layer) : PpuWindows_Clear(&win, ppu, layer);
-  y = ppu->mosaicModulo[y] + ppu->vScroll[layer];
+  y = MOSAIC_START(ppu, y) + ppu->vScroll[layer];
   int sc_offs = PPU_bgTilemapAdr(ppu, layer) + (((y >> 3) & 0x1f) << 5);
   if ((y & 0x100) && PPU_bgTilemapHigher(ppu, layer))
     sc_offs += PPU_bgTilemapWider(ppu, layer) ? 0x800 : 0x400;
@@ -430,7 +453,7 @@ static void PpuDrawBackground_4bpp_mosaic(Ppu *ppu, uint y, bool sub, uint layer
     const uint16 *tp_last = tps[x >> 8 & 1] + 31, *tp_next = tps[(x >> 8 & 1) ^ 1];
     x &= 7;
     int mosaic_size = PPU_mosaicSize(ppu);
-    int w = mosaic_size - (sx - ppu->mosaicModulo[sx]);
+    int w = mosaic_size - (sx - MOSAIC_START(ppu, sx));
     do {
       w = IntMin(w, dstz_end - dstz);
       uint32 tile = *tp;
@@ -467,7 +490,7 @@ static void PpuDrawBackground_2bpp_mosaic(Ppu *ppu, int y, bool sub, uint layer,
     return;  // layer is completely hidden
   PpuWindows win;
   IS_SCREEN_WINDOWED(ppu, sub, layer) ? PpuWindows_Calc(&win, ppu, layer) : PpuWindows_Clear(&win, ppu, layer);
-  y = ppu->mosaicModulo[y] + ppu->vScroll[layer];
+  y = MOSAIC_START(ppu, y) + ppu->vScroll[layer];
   int sc_offs = PPU_bgTilemapAdr(ppu, layer) + (((y >> 3) & 0x1f) << 5);
   if ((y & 0x100) && PPU_bgTilemapHigher(ppu, layer))
     sc_offs += PPU_bgTilemapWider(ppu, layer) ? 0x800 : 0x400;
@@ -489,7 +512,7 @@ static void PpuDrawBackground_2bpp_mosaic(Ppu *ppu, int y, bool sub, uint layer,
     const uint16 *tp_last = tps[x >> 8 & 1] + 31, *tp_next = tps[(x >> 8 & 1) ^ 1];
     x &= 7;
     int mosaic_size = PPU_mosaicSize(ppu);
-    int w = mosaic_size - (sx - ppu->mosaicModulo[sx]);
+    int w = mosaic_size - (sx - MOSAIC_START(ppu, sx));
     do {
       w = IntMin(w, dstz_end - dstz);
       uint32 tile = *tp;
@@ -536,7 +559,7 @@ static void PpuDrawBackground_mode7(Ppu *ppu, uint y, bool sub, PpuZbufType z) {
   clippedV = (clippedV & 0x2000) ? (clippedV | ~1023) : (clippedV & 1023);
   uint8 mosaic_enabled = PPU_mosaicEnabled(ppu, 0);
   if (mosaic_enabled)
-    y = ppu->mosaicModulo[y];
+    y = MOSAIC_START(ppu, y);
   uint32 ry = PPU_m7yFlip(ppu) ? 255 - y : y;
   uint32 m7startX = (ppu->m7matrix[0] * clippedH & ~63) + (ppu->m7matrix[1] * ry & ~63) +
     (ppu->m7matrix[1] * clippedV & ~63) + (xCenter << 8);
@@ -556,7 +579,7 @@ static void PpuDrawBackground_mode7(Ppu *ppu, uint y, bool sub, PpuZbufType z) {
     uint32 outside_value = PPU_m7largeField(ppu) ? 0x3ffff : 0xffffffff;
     bool char_fill = PPU_m7charFill(ppu);
     if (mosaic_enabled) {
-      int w = PPU_mosaicSize(ppu) - (x - ppu->mosaicModulo[x]);
+      int w = PPU_mosaicSize(ppu) - (x - MOSAIC_START(ppu, x));
       do {
         w = IntMin(w, dstz_end - dstz);
         if ((uint32)(xpos | ypos) > outside_value) {
@@ -692,6 +715,12 @@ static NOINLINE void PpuDrawWholeLine(Ppu *ppu, uint y) {
     ((cwin.bits & kCwBitsMod[PPU_preventMathMode(ppu)]) ^ kCwBitsMod[PPU_preventMathMode(ppu) + 4]) << 8;
 
   uint32 *dst = (uint32*)&ppu->renderBuffer[(y - 1) * ppu->renderPitch], *dst_org = dst;
+  // Margins that aren't drawn this frame are black.
+  if (ppu->extraLeftCur < ppu->extraLeftRight)
+    memset(dst_org, 0, sizeof(uint32) * (ppu->extraLeftRight - ppu->extraLeftCur));
+  if (ppu->extraRightCur < ppu->extraLeftRight)
+    memset(dst_org + ppu->extraLeftRight + 256 + ppu->extraRightCur, 0,
+           sizeof(uint32) * (ppu->extraLeftRight - ppu->extraRightCur));
 
   dst += (ppu->extraLeftRight - ppu->extraLeftCur);
 
@@ -773,9 +802,11 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
       // in y-range, get the x location, using the high bit as well
       int x = ppu->oam[index] & 0xff;
       x |= ((ppu->highOam[index >> 3] >> (index & 7)) & 1) << 8;
-      if(x > 255) x -= 512;
+      // X is 9 bits. Values just past the right edge are shown in the right
+      // widescreen margin instead of wrapping around to the left side.
+      if(x >= 256 + ppu->extraRightCur) x -= 512;
       // if in x-range
-      if(x > -spriteSize) {
+      if(x > -spriteSize - ppu->extraLeftCur) {
         // break if we found 32 sprites already
         spritesFound++;
         if(spritesFound > 32) {
@@ -798,7 +829,7 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
         PpuZbufType z = paletteBase + (prio << 8);
 
         for(int col = 0; col < spriteSize; col += 8) {
-          if(col + x > -8 && col + x < 256) {
+          if(col + x > -8 - ppu->extraLeftCur && col + x < 256 + ppu->extraRightCur) {
             // break if we found 34 8*1 slivers already
             tilesFound++;
             if(tilesFound > 34) {

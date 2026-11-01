@@ -25,8 +25,11 @@ typedef struct BgLayer {
 } BgLayer;
 
 enum {
-  kPpuXPixels = 256,
-  kPpuExtraLeftRight = 0,
+  // Widescreen: maximum number of extra pixels rendered on each side of the
+  // 256 pixel SNES view. The amount actually used is set at runtime with
+  // PpuSetExtraSideSpace (0 = original 4:3-ish view).
+  kPpuExtraLeftRight = 96,
+  kPpuXPixels = 256 + kPpuExtraLeftRight * 2,
 };
 
 typedef uint16_t PpuZbufType;
@@ -131,6 +134,9 @@ struct Ppu {
   // times 2 for even and odd frame
 
   uint8_t extraLeftCur, extraRightCur, extraLeftRight;
+  // Whether BG3 (layer index 2) is drawn in the side margins on the current
+  // line. Off for the status bar area so the HUD stays a centered 256 px.
+  bool bg3Margins;
   uint8_t lastMosaicModulo;
   uint8_t lastBrightnessMult;
   bool lineHasSprites;
@@ -140,7 +146,8 @@ struct Ppu {
   uint8_t *renderBuffer;
   uint8_t brightnessMult[32 + 31];
   uint8_t brightnessMultHalf[32 * 2];
-  uint8_t mosaicModulo[kPpuXPixels];
+  // Indexed by coordinate + kPpuExtraLeftRight (coordinates can be negative in the margins)
+  int16_t mosaicModulo[kPpuXPixels];
 
   void *pad2;
 
@@ -225,7 +232,10 @@ void ppu_runLine(Ppu* ppu, int line);
 uint8_t ppu_read(Ppu* ppu, uint8_t adr);
 void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val);
 void ppu_saveload(Ppu *ppu, SaveLoadInfo *sli);
-extern bool g_ppu_no_sprite_limits;  // ignore the 32 sprite / 34 tile per line limits
+extern bool g_ppu_no_sprite_limits;
+// Sets the widescreen margins. left/right are the margins drawn this frame
+// (0..total), total is the margin size of the output buffer (0..kPpuExtraLeftRight).
+void PpuSetExtraSideSpace(Ppu *ppu, int left, int right, int total);  // ignore the 32 sprite / 34 tile per line limits
 void PpuBeginDrawing(Ppu *ppu, uint8_t *pixels, size_t pitch, uint32_t render_flags);
 
 int PpuGetCurrentRenderScale(Ppu *ppu, uint32_t render_flags);

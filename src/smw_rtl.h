@@ -4,6 +4,9 @@
 #include "snes/snes_regs.h"
 
 extern bool g_lunar_magic;
+// Widescreen: extra pixels shown on each side of the 256 px view (0 = original).
+// Game logic uses it to draw, keep and spawn objects across the wider view.
+extern int g_ws_margin;
 extern int g_dbg_ctr_mine;
 
 PointU16 *get_PointU16(PointU16 *pt, uint8 off);

@@ -186,6 +186,7 @@ enum {
   kItem_Quit,
 
   kItem_DisplayMode,
+  kItem_Aspect,
   kItem_WindowSize,
   kItem_Scaling,
   kItem_Filter,
@@ -227,6 +228,7 @@ static const char *const kItemLabels[kItem_Count] = {
   [kItem_Reset] = "RESET GAME",
   [kItem_Quit] = "QUIT GAME",
   [kItem_DisplayMode] = "DISPLAY",
+  [kItem_Aspect] = "ASPECT",
   [kItem_WindowSize] = "WINDOW SIZE",
   [kItem_Scaling] = "SCALING",
   [kItem_Filter] = "FILTER",
@@ -284,6 +286,7 @@ static const char *const kItemHelp[kItem_Count] = {
   [kItem_Reset] = "RESTART FROM THE TITLE",
   [kItem_Quit] = "CLOSE THE GAME",
   [kItem_DisplayMode] = "ALT+ENTER ALSO TOGGLES",
+  [kItem_Aspect] = "WIDER VIEW OF THE LEVEL",
   [kItem_WindowSize] = "CTRL+UP/DOWN ALSO WORKS",
   [kItem_Scaling] = "INTEGER = EVEN PIXELS",
   [kItem_Filter] = "SMOOTH BLURS THE PIXELS",
@@ -301,7 +304,7 @@ static const char *const kItemHelp[kItem_Count] = {
 };
 
 static const uint8 kItemsMain[] = { kItem_Resume, kItem_Video, kItem_Audio, kItem_Controls, kItem_Gameplay, kItem_Reset, kItem_Quit };
-static const uint8 kItemsVideo[] = { kItem_DisplayMode, kItem_WindowSize, kItem_Scaling, kItem_Filter, kItem_VSync, kItem_Renderer, kItem_ShowFps, kItem_Back };
+static const uint8 kItemsVideo[] = { kItem_DisplayMode, kItem_Aspect, kItem_WindowSize, kItem_Scaling, kItem_Filter, kItem_VSync, kItem_Renderer, kItem_ShowFps, kItem_Back };
 static const uint8 kItemsAudio[] = { kItem_Volume, kItem_Latency, kItem_SampleRate, kItem_Back };
 static const uint8 kItemsControls[] = { kItem_KeyboardPage, kItem_GamepadPage, kItem_Back };
 static const uint8 kItemsGamepad[] = {
@@ -441,6 +444,11 @@ static void GetValueText(int id, char *buf, size_t size) {
     snprintf(buf, size, "%s", kNames[Platform_GetDisplayMode()]);
     break;
   }
+  case kItem_Aspect: {
+    int e = Platform_GetWidescreen();
+    snprintf(buf, size, "%s", e >= 96 ? "ULTRAWIDE" : e >= 72 ? "16:9" : e >= 52 ? "16:10" : "ORIGINAL");
+    break;
+  }
   case kItem_WindowSize: snprintf(buf, size, "%d*", Platform_GetWindowScale()); break;
   case kItem_Scaling:
     snprintf(buf, size, "%s", g_config.ignore_aspect_ratio ? "STRETCH" : g_config.integer_scaling ? "INTEGER" : "FIT");
@@ -483,6 +491,15 @@ static void ChangeValue(int id, int delta) {
   case kItem_DisplayMode: {
     int m = Wrap(Platform_GetDisplayMode() + delta, 3);
     Platform_SetDisplayMode(m);
+    break;
+  }
+  case kItem_Aspect: {
+    static const uint8 kSteps[] = { 0, 52, 72, 96 };
+    int cur = 0, e = Platform_GetWidescreen();
+    for (int i = 0; i < 4; i++)
+      if (e >= kSteps[i])
+        cur = i;
+    Platform_SetWidescreen(kSteps[Wrap(cur + delta, 4)]);
     break;
   }
   case kItem_WindowSize: {

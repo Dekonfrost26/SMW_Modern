@@ -64,6 +64,8 @@ void UploadOAMBuffer() {  // 008449
 }
 
 
+int g_ws_margin;
+
 void SmwDrawPpuFrame(void) {
   SimpleHdma hdma_chans[3];
 
@@ -76,6 +78,10 @@ void SmwDrawPpuFrame(void) {
   SimpleHdma_Init(&hdma_chans[2], &dma->channel[7]);
 
   int trigger = g_snes->vIrqEnabled ? g_snes->vTimer + 1 : -1;
+  // Widescreen: when a mid-frame IRQ is used, the lines above it are the
+  // status bar on BG3, which stays a centered 256 px. Below it BG3 is part of
+  // the scene and may extend into the margins.
+  g_ppu->bg3Margins = (trigger < 0);
 
   for (int i = 0; i <= 224; i++) {
     ppu_runLine(g_ppu, i);
@@ -84,6 +90,7 @@ void SmwDrawPpuFrame(void) {
     SimpleHdma_DoLine(&hdma_chans[2]);
     //    dma_doHdma(snes->dma);
     if (i == trigger) {
+      g_ppu->bg3Margins = true;
       SmwVectorIRQ();
       trigger = g_snes->vIrqEnabled ? g_snes->vTimer + 1 : -1;
     }

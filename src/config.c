@@ -377,7 +377,14 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       }
     }
   } else if (section == 1) {
-    if (StringEqualsNoCase(key, "IntegerScaling")) {
+    if (StringEqualsNoCase(key, "AspectRatio")) {
+      // Extra pixels on each side of the 256 px view (square pixels, 224 lines)
+      g_config.extended_aspect_ratio =
+          StringEqualsNoCase(value, "16:10") ? 52 :
+          StringEqualsNoCase(value, "16:9") ? 72 :
+          StringEqualsNoCase(value, "21:9") ? 96 : 0;
+      return true;
+    } else if (StringEqualsNoCase(key, "IntegerScaling")) {
       return ParseBool(value, &g_config.integer_scaling);
     } else if (StringEqualsNoCase(key, "VSync")) {
       return ParseBool(value, &g_config.vsync);
@@ -823,6 +830,9 @@ bool Config_Save(void) {
   IniDoc_Set(&d, "[Graphics]", "WindowScale", buf);
   IniDoc_Set(&d, "[Graphics]", "IgnoreAspectRatio", g_config.ignore_aspect_ratio ? "1" : "0");
   IniDoc_Set(&d, "[Graphics]", "IntegerScaling", g_config.integer_scaling ? "1" : "0");
+  IniDoc_Set(&d, "[Graphics]", "AspectRatio",
+             g_config.extended_aspect_ratio >= 96 ? "21:9" : g_config.extended_aspect_ratio >= 72 ? "16:9" :
+             g_config.extended_aspect_ratio >= 52 ? "16:10" : "4:3");
   IniDoc_Set(&d, "[Graphics]", "NoSpriteLimits", g_config.no_sprite_limits ? "1" : "0");
   IniDoc_Set(&d, "[Graphics]", "OutputMethod", kOutputNames[g_config.output_method <= 2 ? g_config.output_method : 0]);
   IniDoc_Set(&d, "[Graphics]", "LinearFiltering", g_config.linear_filtering ? "1" : "0");

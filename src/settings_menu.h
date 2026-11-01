@@ -43,6 +43,8 @@ int Platform_GetWindowScale(void);
 int Platform_GetMaxWindowScale(void);
 void Platform_SetWindowScale(int scale);
 void Platform_ApplyVideoSettings(void);
+int Platform_GetWidescreen(void);           // extra pixels per side (0 = original)
+void Platform_SetWidescreen(int extra);
 void Platform_ApplySpriteLimit(void);
 void Platform_ApplyVolume(void);
 void Platform_ReopenAudio(void);

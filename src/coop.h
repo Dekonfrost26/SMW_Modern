@@ -8,6 +8,8 @@
 enum { kCoopMaxPlayers = 4 };  // player 0 is the game's own player
 
 extern bool g_coop_enabled;
+// Player whose state is currently swapped into RAM (0 = the game's own player).
+extern uint8 g_coop_current_player;
 
 // Called once per in-level frame, after the main player's update.
 void Coop_UpdateExtraPlayers(void);
@@ -18,3 +20,17 @@ void Coop_OnLevelLoad(void);
 void Coop_DrawOverlay(uint8 *pixels, int pitch, int width, int height);
 // Number of extra players currently in the game (0..3).
 int Coop_ActiveExtraPlayers(void);
+
+// Phase 2: sprite interaction for every player.
+typedef uint8 CoopSpriteFn(uint8 k);
+// Runs fn(k) for each extra player with that player's state swapped in.
+// Records which player picked a normal sprite up (status 0x0B) when
+// `normal_sprite` is set. Does nothing while an extra player is swapped in.
+void Coop_FanOut(CoopSpriteFn *fn, uint8 k, bool normal_sprite);
+// Carried normal sprites remember who carries them (0 = the main player).
+void Coop_SetCarryOwner(uint8 k, uint8 player);
+// Runs fn(k) as the player carrying sprite k. Returns false if that player
+// left the game (the caller should drop the sprite).
+bool Coop_RunAsCarrier(CoopSpriteFn *fn, uint8 k);
+// Per-frame player flag resets the sprite pass does for the main player.
+void Coop_BeginSpriteFrame(void);

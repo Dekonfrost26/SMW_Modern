@@ -6169,7 +6169,8 @@ void DamagePlayer_Hurt() {  // 00f5b7
         DamagePlayer_00F622();
       } else {
         io_sound_ch1 = 4;
-        DropReservedItem();
+        if (!g_coop_current_player)  // extra co-op players have no item box
+          DropReservedItem();
         player_current_state = 1;
         player_current_power_up = 0;
         DamagePlayer_SetHurtAnimationTimer(0x2F);

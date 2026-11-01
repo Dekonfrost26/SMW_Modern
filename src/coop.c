@@ -14,9 +14,11 @@
 #include "funcs.h"
 #include "smw_rtl.h"
 #include <string.h>
+#include <stdio.h>
 #include "coop_art.h"
 
 bool g_coop_enabled;
+uint8 g_coop_current_player;
 
 typedef struct RamRange { uint16 addr, len; } RamRange;
 
@@ -56,12 +58,18 @@ static const RamRange kWorldGuard[] = {
   {0x1DFB, 1},    // music
 };
 
-enum { kCtxSize = 128, kGuardSize = 32 };
+enum {
+  kCtxSize = 128,
+  kGuardSize = 32,
+  kJoinFlash = 0x20,     // frames of invincibility when joining
+  kRespawnFlash = 0x60,  // ... and when coming back after dying
+};
 
 typedef struct CoopState {
   uint8 active[kCoopMaxPlayers];
   uint8 respawn_pending;
   uint8 reserved[11];
+  uint8 carry_owner[kSprSlotsMax];  // player carrying each normal sprite slot
   uint8 ctx[kCoopMaxPlayers][kCtxSize];
 } CoopState;
 
@@ -109,8 +117,8 @@ int Coop_ActiveExtraPlayers(void) {
 }
 
 // Places extra player p next to the main player (whose state is in RAM),
-// small, standing, with a short invincibility flash.
-static void SpawnAtMainPlayer(int p) {
+// small and standing, flashing (invincible) for `flash` frames.
+static void SpawnAtMainPlayer(int p, uint8 flash) {
   CoopState *cs = Coop();
   uint8 *ctx = cs->ctx[p];
   SaveRanges(kPlayerRam, countof(kPlayerRam), ctx);
@@ -124,30 +132,53 @@ static void SpawnAtMainPlayer(int p) {
     if (b) *b = 0;
   }
   *CtxByte(ctx, 0x19) = 0;  // small
-  uint16 x = player_xpos + (p & 1 ? -20 : 20);
+  // P2 joins ahead of the main player (toward the rest of the level), P3 behind, P4 further ahead
+  static const int8 kJoinOffset[kCoopMaxPlayers] = { 0, 20, -20, 40 };
+  uint16 x = player_xpos + kJoinOffset[p];
   CtxByte(ctx, 0x94)[0] = (uint8)x, CtxByte(ctx, 0x94)[1] = x >> 8;
-  *CtxByte(ctx, 0x1497) = 0x60;  // hurt-flash invincibility
+  *CtxByte(ctx, 0x1497) = flash;  // hurt-flash invincibility
   cs->active[p] = 1;
 }
 
 void Coop_OnLevelLoad(void) {
   // The main player isn't placed yet; rejoin on the first in-level frame.
   Coop()->respawn_pending = 1;
+  memset(Coop()->carry_owner, 0, sizeof(Coop()->carry_owner));
+}
+
+// Swapping an extra player's state in and out of RAM, with the world guard.
+typedef struct PlayerSwap {
+  uint8 main_ctx[kCtxSize];
+  uint8 guard[kGuardSize];
+} PlayerSwap;
+
+static void EnterPlayer(PlayerSwap *s, int p) {
+  SaveRanges(kPlayerRam, countof(kPlayerRam), s->main_ctx);
+  SaveRanges(kWorldGuard, countof(kWorldGuard), s->guard);
+  LoadRanges(kPlayerRam, countof(kPlayerRam), Coop()->ctx[p]);
+  // PlayerDraw normally computes these for the main player; the screen-edge
+  // clamp and solid-sprite checks read them.
+  player_on_screen_pos_x = player_xpos - mirror_current_layer1_xpos;
+  player_on_screen_pos_y = player_ypos - mirror_current_layer1_ypos;
+  g_coop_current_player = p;
+}
+
+static void LeavePlayer(PlayerSwap *s, int p) {
+  SaveRanges(kPlayerRam, countof(kPlayerRam), Coop()->ctx[p]);
+  LoadRanges(kWorldGuard, countof(kWorldGuard), s->guard);
+  LoadRanges(kPlayerRam, countof(kPlayerRam), s->main_ctx);
+  g_coop_current_player = 0;
 }
 
 // Runs one extra player's frame with its state swapped into RAM.
 static void RunExtraPlayer(int p, uint8 hold1, uint8 press1, uint8 hold2, uint8 press2) {
   CoopState *cs = Coop();
-  uint8 main_ctx[kCtxSize], before[kCtxSize], guard[kGuardSize];
-  SaveRanges(kPlayerRam, countof(kPlayerRam), main_ctx);
-  SaveRanges(kWorldGuard, countof(kWorldGuard), guard);
-  LoadRanges(kPlayerRam, countof(kPlayerRam), cs->ctx[p]);
+  uint8 before[kCtxSize];
+  PlayerSwap swap;
+  EnterPlayer(&swap, p);
 
   io_controller_hold1 = hold1, io_controller_press1 = press1;
   io_controller_hold2 = hold2, io_controller_press2 = press2;
-  // PlayerDraw normally computes these; the screen-edge clamp needs them.
-  player_on_screen_pos_x = player_xpos - mirror_current_layer1_xpos;
-  player_on_screen_pos_y = player_ypos - mirror_current_layer1_ypos;
   UpdateCurrentPlayerPositionRAM();
   for (uint16 a = 0x1496; a <= 0x14A6; a++)  // this player's timers
     if (g_ram[a])
@@ -166,12 +197,83 @@ static void RunExtraPlayer(int p, uint8 hold1, uint8 press1, uint8 hold2, uint8 
   }
   bool fell_off = (int16)(player_ypos - mirror_current_layer1_ypos) > 0x120;
 
-  SaveRanges(kPlayerRam, countof(kPlayerRam), cs->ctx[p]);
-  LoadRanges(kWorldGuard, countof(kWorldGuard), guard);
-  LoadRanges(kPlayerRam, countof(kPlayerRam), main_ctx);
-
+  LeavePlayer(&swap, p);
+  (void)cs;
   if (died || fell_off)
-    SpawnAtMainPlayer(p);
+    SpawnAtMainPlayer(p, kRespawnFlash);
+}
+
+void Coop_FanOut(CoopSpriteFn *fn, uint8 k, bool normal_sprite) {
+  CoopState *cs = Coop();
+  if (!g_coop_enabled || g_coop_current_player)
+    return;
+  for (int p = 1; p < kCoopMaxPlayers; p++) {
+    if (!cs->active[p] || *CtxByte(cs->ctx[p], 0x71) == 9)
+      continue;
+    PlayerSwap swap;
+    EnterPlayer(&swap, p);
+    uint8 status_before = normal_sprite ? SPR(spr_current_status, k) : 0;
+    uint8 r = fn(k);
+#ifdef COOP_DEBUG
+    if (normal_sprite) {
+      int dx = (int16)(player_xpos - GetSprXPos(k)), dy = (int16)(player_ypos - GetSprYPos(k));
+      if (dx > -40 && dx < 40 && dy > -48 && dy < 48)
+        fprintf(stderr, "coop: P%d near sprite %d id %02x dx %d dy %d r %d status %02x->%02x state %d hurt %d layer %d/%d cd %d\n",
+                p + 1, k, SPR(spr_spriteid, k), dx, dy, r, status_before, SPR(spr_current_status, k), player_current_state,
+                timer_player_hurt, player_current_layer_priority, SPR(spr_table1632, k), SPR(spr_decrementing_table154c, k));
+    }
+#else
+    (void)r;
+#endif
+    if (normal_sprite && SPR(spr_current_status, k) == 0x0B && status_before != 0x0B)
+      cs->carry_owner[k] = p;
+    bool died = player_current_state == 9;
+    LeavePlayer(&swap, p);
+    if (died)
+      SpawnAtMainPlayer(p, kRespawnFlash);
+  }
+}
+
+void Coop_SetCarryOwner(uint8 k, uint8 player) {
+  if (k < kSprSlotsMax)
+    Coop()->carry_owner[k] = player;
+}
+
+bool Coop_RunAsCarrier(CoopSpriteFn *fn, uint8 k) {
+  CoopState *cs = Coop();
+  uint8 p = k < kSprSlotsMax ? cs->carry_owner[k] : 0;
+  if (!p || g_coop_current_player || !g_coop_enabled) {
+    fn(k);
+    return true;
+  }
+  if (p >= kCoopMaxPlayers || !cs->active[p]) {
+    cs->carry_owner[k] = 0;
+    return false;
+  }
+  PlayerSwap swap;
+  EnterPlayer(&swap, p);
+  fn(k);
+  bool died = player_current_state == 9;
+  LeavePlayer(&swap, p);
+  if (died)
+    SpawnAtMainPlayer(p, kRespawnFlash);
+  return true;
+}
+
+void Coop_BeginSpriteFrame(void) {
+  CoopState *cs = Coop();
+  if (!g_coop_enabled)
+    return;
+  for (int p = 1; p < kCoopMaxPlayers; p++) {
+    if (!cs->active[p])
+      continue;
+    uint8 *ctx = cs->ctx[p];
+    // Same as the start of ProcessNormalSprites for the main player
+    *CtxByte(ctx, 0x1470) = *CtxByte(ctx, 0x148F);
+    *CtxByte(ctx, 0x148F) = 0;
+    *CtxByte(ctx, 0x1471) = 0;
+    *CtxByte(ctx, 0x18C2) = 0;
+  }
 }
 
 void Coop_UpdateExtraPlayers(void) {
@@ -184,14 +286,14 @@ void Coop_UpdateExtraPlayers(void) {
     cs->respawn_pending = 0;
     for (int p = 1; p < kCoopMaxPlayers; p++)
       if (cs->active[p])
-        SpawnAtMainPlayer(p);
+        SpawnAtMainPlayer(p, kJoinFlash);
   }
   // Player 2 uses the second controller: Start joins, Start+Select leaves.
   uint8 hold1 = io_controller_hold1_copyp2, press1 = io_controller_press1_copyp2;
   uint8 hold2 = io_controller_hold2_copyp2, press2 = io_controller_press2_copyp2;
   if (!cs->active[1]) {
     if (press1 & 0x10)
-      SpawnAtMainPlayer(1);
+      SpawnAtMainPlayer(1, kJoinFlash);
     return;
   }
   if ((hold1 & 0x30) == 0x30 && (press1 & 0x30)) {

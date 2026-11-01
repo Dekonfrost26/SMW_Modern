@@ -2776,7 +2776,15 @@ void ExtSpr01_SmokePuff(uint8 k) {  // 02a34f
   EraseExtSprite(k);
 }
 
-void CheckMarioToExtendedSpriteCollision(uint8 k) {  // 02a3f6
+static uint8 CheckMarioToExtendedSpriteCollision_OnePlayer(uint8 k);
+// Co-op: enemy projectiles (and cloud coins) also hit every extra player.
+void CheckMarioToExtendedSpriteCollision(uint8 k) {
+  CheckMarioToExtendedSpriteCollision_OnePlayer(k);
+  if (g_coop_current_player == 0 && g_coop_enabled && ext_spr_spriteid[k] && Coop_ActiveExtraPlayers())
+    Coop_FanOut(&CheckMarioToExtendedSpriteCollision_OnePlayer, k, false);
+}
+
+static uint8 CheckMarioToExtendedSpriteCollision_OnePlayer(uint8 k) {  // 02a3f6
   if (ext_spr_table1779[k] == player_current_layer_priority) {
     CollInfo ci;
     StandardSpriteToSpriteCollisionChecks_GetMarioClipping(&ci);
@@ -2810,6 +2818,7 @@ void CheckMarioToExtendedSpriteCollision(uint8 k) {  // 02a3f6
       }
     }
   }
+  return 0;
 }
 
 void CheckMarioToExtendedSpriteColl_02A469(uint8 k) {  // 02a469

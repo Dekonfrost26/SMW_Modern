@@ -1,5 +1,6 @@
 #include "consts.h"
 #include "funcs.h"
+#include "coop.h"
 #include "smw_rtl.h"
 #include "variables.h"
 #include "assets/smw_assets.h"
@@ -779,6 +780,7 @@ void ProcessNormalSprites() {  // 01808c
   flag_player_in_lakitus_cloud = 0;
   yoshi_stray_yoshi_flag = sprites_yoshi_slot_index;
   sprites_yoshi_slot_index = 0;
+  Coop_BeginSpriteFrame();
   if (g_more_sprite_slots) {
     // OAM page 1 starts empty each frame (Y = 0xF0 hides an entry)
     for (int e = 0; e < 128; e++)
@@ -2759,7 +2761,14 @@ void GenericGFXRtDraw1Tile16x16_019F0F(uint8 k, uint8 r4) {  // 019f0f
   GenericGFXRtMoveTileOffscreenVertically(v3, v1);
 }
 
-void SprStatus0B_Carried(uint8 k) {  // 019f71
+static uint8 SprStatus0B_Carried_OnePlayer(uint8 k);
+// Co-op: a carried sprite follows (and is thrown by) the player carrying it.
+void SprStatus0B_Carried(uint8 k) {
+  if (!Coop_RunAsCarrier(&SprStatus0B_Carried_OnePlayer, k))
+    SPR(spr_current_status, k) = 9;  // carrier left the game: drop it
+}
+
+static uint8 SprStatus0B_Carried_OnePlayer(uint8 k) {  // 019f71
   SprStatus0B_Carried_019F9B(k);
   if (player_turning_around_flag || yoshi_in_pipe || timer_display_player_face_screen_pose)
     SPR(spr_oamindex, k) = 0;
@@ -2768,6 +2777,7 @@ void SprStatus0B_Carried(uint8 k) {  // 019f71
     sprites_tile_priority = 16;
   ProcessStunnedNormalSprite(k);
   sprites_tile_priority = v1;
+  return 0;
 }
 
 void SprStatus0B_Carried_019F9B(uint8 k) {  // 019f9b
@@ -3346,11 +3356,28 @@ uint8 CheckNormalSpriteToNormalSpriteColl_01A77C_ReturnsTwice(uint8 k, uint8 j) 
   return false;
 }
 
-uint8 CheckPlayerToNormalSpriteCollision(uint8 k) {  // 01a7e4
+static uint8 CheckPlayerToNormalSpriteCollision_OnePlayer(uint8 k) {  // 01a7e4
   if ((SPR(spr_property_bits167a, k) & 0x20) != 0 || !(SPR(spr_xoffscreen_flag, k) | (counter_global_frames ^ k) & 1))
     return CheckPlayerToNormalSpriteColl_ProcessInteract(k);
   else
     return 0;
+}
+
+// Co-op: the sprite also interacts with every extra player (stomp, hurt,
+// kick, pick up). The caller only sees the main player's result, so sprites
+// with their own contact reactions keep working for the main player.
+uint8 CheckPlayerToNormalSpriteCollision(uint8 k) {
+  uint8 status_before = SPR(spr_current_status, k);
+  uint8 r = CheckPlayerToNormalSpriteCollision_OnePlayer(k);
+  if (g_coop_current_player == 0 && g_coop_enabled) {
+    if (SPR(spr_current_status, k) == 0x0B && status_before != 0x0B)
+      Coop_SetCarryOwner(k, 0);
+    // Skip if the main player already knocked it out of its normal state
+    // (no double stomps).
+    if (SPR(spr_current_status, k) == status_before && Coop_ActiveExtraPlayers())
+      Coop_FanOut(&CheckPlayerToNormalSpriteCollision_OnePlayer, k, true);
+  }
+  return r;
 }
 
 uint8 CheckPlayerToNormalSpriteColl_ReturnNoContact() {  // 01a7f5
@@ -4328,7 +4355,16 @@ void NormalSpritePlatformGFXRt_01B37E(uint8 k, uint8 a) {  // 01b37e
   FinishOAMWrite(k, 2, a);
 }
 
-uint8 SolidSpriteBlock(uint8 k) {  // 01b457
+static uint8 SolidSpriteBlock_OnePlayer(uint8 k);
+// Co-op: every player can stand on solid sprites (platforms, blocks).
+uint8 SolidSpriteBlock(uint8 k) {
+  uint8 r = SolidSpriteBlock_OnePlayer(k);
+  if (g_coop_current_player == 0 && g_coop_enabled && Coop_ActiveExtraPlayers())
+    Coop_FanOut(&SolidSpriteBlock_OnePlayer, k, false);
+  return r;
+}
+
+static uint8 SolidSpriteBlock_OnePlayer(uint8 k) {  // 01b457
   uint8 r = CheckPlayerToNormalSpriteColl_ProcessInteract(k);
   if (!r)
     return 0;

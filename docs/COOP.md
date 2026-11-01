@@ -8,8 +8,18 @@ they can be checked).
 Phase 1 as built: player 2 (second controller, Start to join, Start+Select
 to leave) runs the game's player code on a swapped-in context stored in the
 RAM extension, so save states include it. Pipes, doors and death bring them
-back beside player 1. They don't interact with enemies yet, and are drawn as
-the original character on top of the frame.
+back beside player 1. They are drawn as the original character on top of the
+frame.
+
+Phase 2 as built: the player-contact entry points fan out to every extra
+player with that player's state swapped in: `CheckPlayerToNormalSpriteCollision`
+(stomp, hurt, kick, pick up), `SolidSpriteBlock` (platforms) and
+`CheckMarioToExtendedSpriteCollision` (enemy projectiles). Callers still only
+see the main player's result. A normal sprite picked up by an extra player
+remembers its carrier, and `SprStatus0B_Carried` runs as that player. A hurt
+extra player doesn't drop the main player's reserve item. Build with
+`-DCOOP_DEBUG` to log extra-player contacts. Tested: an extra player stomps a
+walking enemy and is hurt (and respawned) by touching one from the side.
 
 ## Characters
 
@@ -67,8 +77,8 @@ the original character on top of the frame.
 ## Phases
 
 1. Context table, plus a second player updated and drawn (no enemy contact).
-   Shared camera.
-2. Collision fan-out: stomp, hurt, platforms, kick/carry with owners.
+   Shared camera. (done)
+2. Collision fan-out: stomp, hurt, platforms, kick/carry with owners. (done)
 3. Bubbles, death and respawn, drop-in/out, 4 pads, P3/P4 characters.
 4. Yoshi, cape, pipes, doors, keyholes, goal, overworld handling, saves.
 

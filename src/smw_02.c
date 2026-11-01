@@ -1,5 +1,6 @@
 #include "consts.h"
 #include "funcs.h"
+#include "coop.h"
 #include "smw_rtl.h"
 #include "variables.h"
 
@@ -3277,9 +3278,10 @@ void SprXXX_LoadShooter(uint8 k, uint8 a, PointU16 pt, const uint8 *edata) {  //
 }
 
 void InitializeAllSpritesOnLevelLoad() {  // 02abf2
+  Coop_OnLevelLoad();
   // Switch the number of sprite slots only here, when every slot is reset.
   if (g_more_sprite_slots != g_want_more_sprite_slots) {
-    SprExtClear(0, kRamExtSize);
+    SprExtClear(0, kRamSprShadowSize);
     g_more_sprite_slots = g_want_more_sprite_slots;
   }
   for (int8 i = 63; i >= 0; --i)

@@ -24,6 +24,7 @@
 #include "util.h"
 #include "smw_spc_player.h"
 #include "settings_menu.h"
+#include "coop.h"
 
 #include "snes/snes.h"
 #ifdef __SWITCH__
@@ -214,6 +215,7 @@ void RtlDrawPpuFrame(uint8 *pixel_buffer, size_t pitch, uint32 render_flags) {
   uint8 *ppu_pixels = g_other_image ? g_my_pixels : g_pixels;
   for (size_t y = 0, y_end = g_snes_height; y < y_end; y++)
     memcpy((uint8 *)pixel_buffer + y * pitch, ppu_pixels + y * g_snes_width * 4, g_snes_width * 4);
+  Coop_DrawOverlay(pixel_buffer, (int)pitch, g_snes_width, g_snes_height);
 }
 
 static void DrawPpuFrameWithPerf(void) {
@@ -487,6 +489,7 @@ int main(int argc, char** argv) {
   RtlSetVerifyAgainstRom(g_config.verify_against_rom);
   // Extra sprite slots don't exist in the original ROM, so never with verification.
   g_want_more_sprite_slots = g_more_sprite_slots = g_config.more_sprites && !g_config.verify_against_rom;
+  g_coop_enabled = g_config.coop && !g_config.verify_against_rom;
   Snes *snes = SnesInit(kRom, kRom_SIZE);
   if (snes == NULL) {
 error_reading:;

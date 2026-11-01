@@ -1,5 +1,6 @@
 #include "consts.h"
 #include "funcs.h"
+#include "coop.h"
 #include "smw_rtl.h"
 #include "variables.h"
 #include "assets/smw_assets.h"
@@ -641,7 +642,7 @@ void InitializeFirst8KBOfRAM() {  // 008a4e
       v0 -= 2;
     while ((int16)(v0 - 511) < 0 && (int16)(v0 - 256) >= 0);
   } while (v0 != 0xFFFE);
-  SprExtClear(0, kRamExtSize);  // RAM extension (sprite slots 12+)
+  SprExtClear(0, kRamExtSize);  // RAM extension (sprite slots 12+, co-op state)
   stripe_image_upload = 0;
   *(uint16 *)&palettes_dynamic_palette_upload_index = 0;
   stripe_image_upload_data[0] = -1;
@@ -2291,6 +2292,7 @@ void GameMode14_InLevel() {  // 00a1da
       PlayerDraw();
       UpdateCurrentPlayerPositionRAM();
       GameMode14_InLevel_00C47E();
+      Coop_UpdateExtraPlayers();
       ProcessNormalSprites();
       GameMode14_InLevel_Bank02();
       mirror_current_layer1_ypos = v2;

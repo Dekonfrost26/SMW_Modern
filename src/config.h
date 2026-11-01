@@ -71,6 +71,7 @@ typedef struct Config {
   bool save_playthrough;
   bool verify_against_rom;
   bool more_sprites;
+  bool coop;
   uint8 msuvolume;
   uint32 features0;
 

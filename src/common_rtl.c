@@ -63,11 +63,13 @@ static void LoadSnesState(SaveLoadInfo *sli) {
   // Do the actual loading
   snes_saveload(g_snes, sli);
   // RAM extension (sprite slots 12+). Older states end before it.
+  // States made by older builds have a shorter extension, or none.
   LoadFuncState *st = (LoadFuncState *)sli;
-  if (sli->func == &loadFunc && (size_t)(st->pend - st->p) >= kRamExtSize)
-    loadFunc(sli, g_ram + kSnesRamSize, kRamExtSize);
-  else
-    memset(g_ram + kSnesRamSize, 0, kRamExtSize);
+  size_t avail = sli->func == &loadFunc ? (size_t)(st->pend - st->p) : 0;
+  size_t n = avail < kRamExtSize ? avail : kRamExtSize;
+  memset(g_ram + kSnesRamSize, 0, kRamExtSize);
+  if (n)
+    loadFunc(sli, g_ram + kSnesRamSize, n);
 }
 
 static void SaveSnesState(SaveLoadInfo *sli) {

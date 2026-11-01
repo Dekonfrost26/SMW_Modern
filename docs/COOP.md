@@ -1,16 +1,22 @@
 # Simultaneous co-op (up to 4 players): design
 
-Status: design only. Nothing in this file is implemented yet. It is based on a
-full audit of player state and the in-level frame flow (function names and
-SNES addresses are listed below so they can be checked).
+Status: phase 1 is implemented (`src/coop.c`, `[Features] Coop`, Options >
+Gameplay > Co-op). This design is based on a full audit of player state and
+the in-level frame flow (function names and SNES addresses are listed below so
+they can be checked).
+
+Phase 1 as built: player 2 (second controller, Start to join, Start+Select
+to leave) runs the game's player code on a swapped-in context stored in the
+RAM extension, so save states include it. Pipes, doors and death bring them
+back beside player 1. They don't interact with enemies yet, and are drawn as
+the original character on top of the frame.
 
 ## Characters
 
-- P1 and P2 use the game's own Mario and Luigi, as in the original 2-player
-  mode. Their graphics come from the player's ROM data at runtime.
-- P3 and P4 will be **original characters** made for this port (new sprite art
-  and palettes). They are not copies or recolours of Nintendo characters.
-  They use the same movement and power-up rules.
+- P1 is the game's own player.
+- P2, P3 and P4 are an **original character** made for this port ("Sprout",
+  `src/coop_art.h`), in teal, orange and purple. It is not a copy or recolour
+  of a Nintendo character. It uses the same movement and power-up rules.
 
 ## Why the original game can't just run twice
 

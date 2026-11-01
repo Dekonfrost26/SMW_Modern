@@ -36,12 +36,16 @@ void SimpleHdma_Init(SimpleHdma *c, DmaChannel *dc);
 void SimpleHdma_DoLine(SimpleHdma *c);
 void RtlHdmaSetup(uint8 which, uint8 transfer_unit, uint8 reg, uint32 addr, uint8 indirect_bank);
 
-// 128 KB SNES work RAM, followed by a PC extension. The extension shadows
-// addresses 0x0000-0x21FF and holds slots 12+ of the per-slot sprite tables
-// (see SPR() in variables.h and docs/SPRITES.md).
+// 128 KB SNES work RAM, followed by a PC extension (saved in save states):
+//  - kSnesRamSize + 0x0000: shadow of 0x0000-0x21FF holding slots 12+ of the
+//    per-slot sprite tables (see SPR() in variables.h and docs/SPRITES.md)
+//  - kSnesRamSize + kRamCoopOffset: co-op player state (src/coop.c)
 enum {
   kSnesRamSize = 0x20000,
-  kRamExtSize = 0x2200,
+  kRamSprShadowSize = 0x2200,
+  kRamCoopOffset = kRamSprShadowSize,
+  kRamCoopSize = 0x400,
+  kRamExtSize = kRamSprShadowSize + kRamCoopSize,
   kRamSize = kSnesRamSize + kRamExtSize,
 };
 extern uint8 g_ram[kRamSize];

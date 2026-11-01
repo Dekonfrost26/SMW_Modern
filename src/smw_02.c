@@ -3,6 +3,17 @@
 #include "smw_rtl.h"
 #include "variables.h"
 
+// More sprite slots: a free slot among 12+ when the original ones are full,
+// or 0xFF when there is none (or the feature is off).
+static uint8 FindFreeExtraSpriteSlot(void) {
+  if (!g_more_sprite_slots)
+    return 0xff;
+  for (int j = kSprSlotsMax - 1; j >= kSprSlotsOriginal; j--)
+    if (!SPR(spr_current_status, j))
+      return j;
+  return 0xff;
+}
+
 // Widescreen helpers. With g_ws_margin == 0 callers keep the original tests.
 // True if a relative X is inside [lo, hi) widened by the margin on both sides.
 static inline bool WsInView(int rel, int lo, int hi) {
@@ -3058,6 +3069,11 @@ bool LoadOneSprite(const uint8 *p, uint8 k, PointU16 pt) {
   while (SPR(spr_current_status, v10)) {
     if (--v10 == r6) {
       if (r5 != 123) {
+        uint8 extra = FindFreeExtraSpriteSlot();
+        if (extra != 0xff) {
+          v10 = extra;
+          break;
+        }
       LABEL_38:
         sprites_load_status[k] = 0;
         return true;
@@ -3140,7 +3156,7 @@ uint8 FindFreeNormalSpriteSlot_02A9E6(uint8 r14) {  // 02a9ef
   uint8 result = kParseLevelSpriteList_SpriteSlotMax[sprites_sprite_memory_setting] - r14;
   while (SPR(spr_current_status, result)) {
     if (--result == r15)
-      return -1;
+      return FindFreeExtraSpriteSlot();  // 0xFF (none) unless extra slots are on
   }
   return result;
 }
@@ -3261,6 +3277,11 @@ void SprXXX_LoadShooter(uint8 k, uint8 a, PointU16 pt, const uint8 *edata) {  //
 }
 
 void InitializeAllSpritesOnLevelLoad() {  // 02abf2
+  // Switch the number of sprite slots only here, when every slot is reset.
+  if (g_more_sprite_slots != g_want_more_sprite_slots) {
+    SprExtClear(0, kRamExtSize);
+    g_more_sprite_slots = g_want_more_sprite_slots;
+  }
   for (int8 i = 63; i >= 0; --i)
     sprites_load_status[(uint8)i] = 0;
   uint8 r0 = -1;

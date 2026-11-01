@@ -16,6 +16,10 @@ void SmwLoadNextPlaybackSnapshot();
 
 uint8 g_ram[kRamSize];
 bool g_more_sprite_slots;
+bool g_want_more_sprite_slots;
+uint8 *g_oam_page = g_ram + 0x200;
+uint8 g_oam_page1[kOamPageSize];
+bool g_oam_page1_used;
 uint8 *g_sram;
 int g_sram_size;
 const uint8 *g_rom;

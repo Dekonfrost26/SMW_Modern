@@ -483,6 +483,9 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return ParseBool(value, &g_config.pause_on_focus_loss);
     }
   } else if (section == 4) {
+    if (StringEqualsNoCase(key, "MoreSprites")) {
+      return ParseBool(value, &g_config.more_sprites);
+    }
   }
   return false;
 }
@@ -531,6 +534,7 @@ void ParseConfigFile(const char *filename) {
   g_config.vsync = true;
   g_config.volume = 100;
   g_config.pause_on_focus_loss = true;
+  g_config.more_sprites = true;
 
   if (filename != NULL || !ParseOneConfigFile("smw.user.ini", 0)) {
     if (filename == NULL)
@@ -848,6 +852,7 @@ bool Config_Save(void) {
 
   IniDoc_Set(&d, "[General]", "Autosave", g_config.autosave ? "1" : "0");
   IniDoc_Set(&d, "[General]", "PauseOnFocusLoss", g_config.pause_on_focus_loss ? "1" : "0");
+  IniDoc_Set(&d, "[Features]", "MoreSprites", g_config.more_sprites ? "1" : "0");
 
   // Control lines are only rewritten when changed, so hand-edited layouts
   // (e.g. a different player 2 gamepad layout) are left alone otherwise.

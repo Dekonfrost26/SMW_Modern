@@ -47,6 +47,16 @@ enum {
 extern uint8 g_ram[kRamSize];
 // True when normal sprite slots 12+ are in use (stored in the RAM extension).
 extern bool g_more_sprite_slots;
+// Requested setting; applied at the next level load (SprApplySlotSetting).
+extern bool g_want_more_sprite_slots;
+// OAM page that sprite code currently writes to. Page 0 is SNES RAM 0x200
+// (entries, then the packed high table at +0x200 and the per-tile size
+// buffer at +0x220). Page 1 holds sprite slots 12+ and is drawn by the PPU
+// behind page 0 (Ppu.extOam).
+enum { kOamPageSize = 0x2A0 };
+extern uint8 *g_oam_page;
+extern uint8 g_oam_page1[kOamPageSize];
+extern bool g_oam_page1_used;  // page 1 was filled this frame
 extern uint8 *g_sram;
 extern int g_sram_size;
 extern const uint8 *g_rom;

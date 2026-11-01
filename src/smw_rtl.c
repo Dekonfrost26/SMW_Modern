@@ -59,6 +59,10 @@ void SmwSavePlaythroughSnapshot() {
 
 void UploadOAMBuffer() {  // 008449
   memcpy(g_ppu->oam, g_ram + 0x200, 0x220);
+  // OAM page 1 (sprite slots 12+) only when it was filled this frame
+  g_ppu->extOam = g_oam_page1_used ? (const uint16 *)g_oam_page1 : NULL;
+  g_ppu->extHighOam = g_oam_page1 + 0x200;
+  g_oam_page1_used = false;
   RtlPpuWrite(OAMADDH, 0x80);
   RtlPpuWrite(OAMADDL, mirror_oamaddress_lo);
 }

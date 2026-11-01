@@ -70,6 +70,7 @@ typedef struct Config {
   bool disable_frame_delay;
   bool save_playthrough;
   bool verify_against_rom;
+  bool more_sprites;
   uint8 msuvolume;
   uint32 features0;
 

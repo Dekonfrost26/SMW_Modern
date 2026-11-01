@@ -7,6 +7,7 @@
 
 #include "settings_menu.h"
 #include "config.h"
+#include "common_rtl.h"
 #include "assets/smw_assets.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -210,6 +211,7 @@ enum {
   kItem_PadDefault,
 
   kItem_SpriteLimit,
+  kItem_MoreSprites,
   kItem_Autosave,
   kItem_FocusPause,
 
@@ -267,6 +269,7 @@ static const char *const kItemLabels[kItem_Count] = {
   [kItem_Pad0 + 11] = "R BUTTON",
   [kItem_PadDefault] = "RESET BUTTONS",
   [kItem_SpriteLimit] = "SPRITE LIMIT",
+  [kItem_MoreSprites] = "ENEMY SLOTS",
   [kItem_Autosave] = "AUTOSAVE",
   [kItem_FocusPause] = "AUTO PAUSE",
   [kItem_Back] = "BACK",
@@ -298,6 +301,7 @@ static const char *const kItemHelp[kItem_Count] = {
   [kItem_SampleRate] = "MATCH YOUR SOUND DEVICE",
   [kItem_KeysDefault] = "RESTORE DEFAULT KEYS",
   [kItem_SpriteLimit] = "REMOVED = LESS FLICKER",
+  [kItem_MoreSprites] = "APPLIES FROM NEXT LEVEL",
   [kItem_Autosave] = "RESUME WHERE YOU QUIT",
   [kItem_FocusPause] = "PAUSE WHEN UNFOCUSED",
   [kItem_Back] = "ESC OR B TO GO BACK",
@@ -315,7 +319,7 @@ static const uint8 kItemsKeyboard[] = {
   kItem_Key0 + 0, kItem_Key0 + 1, kItem_Key0 + 2, kItem_Key0 + 3, kItem_Key0 + 4, kItem_Key0 + 5,
   kItem_Key0 + 6, kItem_Key0 + 7, kItem_Key0 + 8, kItem_Key0 + 9, kItem_Key0 + 10, kItem_Key0 + 11,
   kItem_KeysDefault, kItem_Back };
-static const uint8 kItemsGameplay[] = { kItem_SpriteLimit, kItem_Autosave, kItem_FocusPause, kItem_Back };
+static const uint8 kItemsGameplay[] = { kItem_SpriteLimit, kItem_MoreSprites, kItem_Autosave, kItem_FocusPause, kItem_Back };
 static const uint8 kItemsConfirm[] = { kItem_No, kItem_Yes };
 
 typedef struct PageDef {
@@ -466,6 +470,7 @@ static void GetValueText(int id, char *buf, size_t size) {
   case kItem_Latency: snprintf(buf, size, "%s", kLatencyNames[IndexOfU16(kLatencySamples, 4, g_config.audio_samples)]); break;
   case kItem_SampleRate: snprintf(buf, size, "%s", kSampleRateNames[IndexOfU16(kSampleRates, 3, g_config.audio_freq)]); break;
   case kItem_SpriteLimit: snprintf(buf, size, "%s", g_config.no_sprite_limits ? "REMOVED" : "ORIGINAL"); break;
+  case kItem_MoreSprites: snprintf(buf, size, "%s", g_config.more_sprites ? "24" : "12"); break;
   case kItem_Autosave: snprintf(buf, size, "%s", g_config.autosave ? "ON" : "OFF"); break;
   case kItem_FocusPause: snprintf(buf, size, "%s", g_config.pause_on_focus_loss ? "ON" : "OFF"); break;
   default:
@@ -560,6 +565,10 @@ static void ChangeValue(int id, int delta) {
   case kItem_SpriteLimit:
     g_config.no_sprite_limits ^= 1;
     Platform_ApplySpriteLimit();
+    break;
+  case kItem_MoreSprites:
+    g_config.more_sprites ^= 1;
+    g_want_more_sprite_slots = g_config.more_sprites && !g_config.verify_against_rom;
     break;
   case kItem_Autosave: g_config.autosave ^= 1; break;
   case kItem_FocusPause: g_config.pause_on_focus_loss ^= 1; break;

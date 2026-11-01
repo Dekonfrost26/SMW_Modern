@@ -779,11 +779,25 @@ void ProcessNormalSprites() {  // 01808c
   flag_player_in_lakitus_cloud = 0;
   yoshi_stray_yoshi_flag = sprites_yoshi_slot_index;
   sprites_yoshi_slot_index = 0;
-  for (int8 i = 11; i >= 0; --i) {
+  if (g_more_sprite_slots) {
+    // OAM page 1 starts empty each frame (Y = 0xF0 hides an entry)
+    for (int e = 0; e < 128; e++)
+      g_oam_page1[e * 4 + 1] = 0xf0;
+    memset(g_oam_page1 + 0x220, 0, 0x80);
+  }
+  for (int i = SprNumSlots() - 1; i >= 0; --i) {
     spr_current_slotid = i;
+    // Slots 12+ draw into OAM page 1 with the same layout as slots 0-11
+    g_oam_page = i >= kSprSlotsOriginal ? g_oam_page1 : g_ram + 0x200;
     ProcessNormalSprites_GetNormalSpriteOAMIndexAndDecrementTimers(i);
     ProcessNormalSprites_HandleSprite(i);
   }
+  if (g_more_sprite_slots) {
+    g_oam_page = g_oam_page1;
+    CompressOamEntExt();
+    g_oam_page1_used = true;
+  }
+  g_oam_page = g_ram + 0x200;
   if (flag_run_cluster_sprites)
     ProcessClusterSprites();
   if (!sprites_yoshi_slot_index) {
@@ -801,7 +815,7 @@ static const uint8 kProcessNormalSprites_DATA_07F0B4[20] = { 0x0, 0xc, 0x18, 0x2
 
 void ProcessNormalSprites_GetNormalSpriteOAMIndexAndDecrementTimers(uint8 k) {  // 0180d2
   SPR(spr_oamindex, k) =
-      kProcessNormalSpritesSpriteOAMIndexes[(uint8)(kProcessNormalSprites_DATA_07F0B4[sprites_sprite_memory_setting] + k)];
+      kProcessNormalSpritesSpriteOAMIndexes[(uint8)(kProcessNormalSprites_DATA_07F0B4[sprites_sprite_memory_setting] + k % kSprSlotsOriginal)];
   if (SPR(spr_current_status, k) && !flag_sprites_locked) {
     if (SPR(spr_decrementing_table1540, k))
       --SPR(spr_decrementing_table1540, k);

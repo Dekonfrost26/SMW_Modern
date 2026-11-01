@@ -485,6 +485,8 @@ int main(int argc, char** argv) {
   // The C code alone drives the game so gameplay changes take effect. Verification
   // against the original ROM (which overrides the C result on any difference) is opt-in.
   RtlSetVerifyAgainstRom(g_config.verify_against_rom);
+  // Extra sprite slots don't exist in the original ROM, so never with verification.
+  g_want_more_sprite_slots = g_more_sprite_slots = g_config.more_sprites && !g_config.verify_against_rom;
   Snes *snes = SnesInit(kRom, kRom_SIZE);
   if (snes == NULL) {
 error_reading:;

@@ -188,9 +188,9 @@ extern uint8 ptr_layer2_is_bg;
 #define sa1_snescode_pointer (*(uint16*)(g_ram+0x183))
 #define sa1_snescode_pointer_bank (*(uint8*)(g_ram+0x185))
 #define sa1_snesdone_flag ((uint8*)(g_ram+0x18A))
-#define oam_buf ((OamEnt*)(g_ram+0x200))
-#define oam_buf_ext ((uint8*)(g_ram+0x400))
-#define sprites_oamtile_size_buffer ((uint8*)(g_ram+0x420))
+#define oam_buf ((OamEnt*)(g_oam_page))  // SNES 0x200, or OAM page 1 for sprite slots 12+
+#define oam_buf_ext ((uint8*)(g_oam_page+0x200))
+#define sprites_oamtile_size_buffer ((uint8*)(g_oam_page+0x220))
 #define misc_hdmawindow_effect_table ((uint8*)(g_ram+0x4A0))
 #define palettes_palette_upload_table_index (*(uint8*)(g_ram+0x680))
 #define palettes_dynamic_palette_upload_index (*(uint8*)(g_ram+0x681))

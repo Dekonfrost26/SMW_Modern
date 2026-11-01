@@ -66,6 +66,28 @@ void UploadOAMBuffer() {  // 008449
 
 int g_ws_margin;
 
+// Widescreen margins for this frame: shown only in modes that display a
+// scrolling scene, and never past the edges of the level or map, where the
+// tilemap holds stale data.
+static void SmwUpdateWidescreenMargins(void) {
+  int e = g_ws_margin, left = 0, right = 0;
+  uint8 mode = misc_game_mode;
+  bool scene = (mode >= 0x05 && mode <= 0x0f) || (mode >= 0x13 && mode <= 0x15);
+  if (e && scene && PPU_mode(g_ppu) != 7) {
+    int cam = (int16)mirror_current_layer1_xpos;
+    int width;
+    if (mode >= 0x0b && mode <= 0x0f)
+      width = 512;  // overworld map
+    else if (misc_level_layout_flags & 1)
+      width = 512;  // vertical level
+    else
+      width = camera_last_screen_horiz <= 1 ? 256 : camera_last_screen_horiz * 256;
+    left = IntMax(0, IntMin(e, cam));
+    right = IntMax(0, IntMin(e, width - 256 - cam));
+  }
+  PpuSetExtraSideSpace(g_ppu, left, right, e);
+}
+
 void SmwDrawPpuFrame(void) {
   SimpleHdma hdma_chans[3];
 
@@ -82,6 +104,7 @@ void SmwDrawPpuFrame(void) {
   // status bar on BG3, which stays a centered 256 px. Below it BG3 is part of
   // the scene and may extend into the margins.
   g_ppu->bg3Margins = (trigger < 0);
+  SmwUpdateWidescreenMargins();
 
   for (int i = 0; i <= 224; i++) {
     ppu_runLine(g_ppu, i);

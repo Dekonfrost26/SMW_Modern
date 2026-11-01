@@ -2965,11 +2965,19 @@ void ParseLevelSpriteList_Entry2() {  // 02a802
     r0 = t & 0xF0;
     v0 = HIBYTE(mirror_current_layer1_ypos) + (t >> 8);
   } else {
-    uint16 t = kParseLevelSpriteList_DATA_02A7F6[camera_layer1_scrolling_direction] + (uint8)mirror_current_layer1_xpos;
+    // Spawn column: 0x30 px left of the screen, or 0x120 px right of its left
+    // edge, pushed out by the widescreen margin so sprites appear before they
+    // scroll into the visible area.
+    static const int16 kSpawnOffset[3] = { -0x30, 0, 0x120 };
+    uint8 dir = camera_layer1_scrolling_direction;
+    int off = kSpawnOffset[dir] + (dir == 0 ? -g_ws_margin : dir == 2 ? g_ws_margin : 0);
+    uint16 t = mirror_current_layer1_xpos + off;
     r0 = t & 0xF0;
-    v0 = HIBYTE(mirror_current_layer1_xpos) + (t >> 8);
+    r1 = t >> 8;
+    goto have_column;
   }
   r1 = kParseLevelSpriteList_DATA_02A7F9[camera_layer1_scrolling_direction] + v0;
+have_column:
 
   if (g_lunar_magic) {
     LmHook_BE8A(r0 | r1 << 8);
@@ -3285,13 +3293,19 @@ void LoadSpritesOnLevelLoad() {  // 02ac5c
     if (g_lunar_magic)
       LmHook_LoadSpritesOnLevelLoad();
     uint16 old_x = mirror_current_layer1_xpos;
-    mirror_current_layer1_xpos -= 96;
+    // Originally columns cam-0x60 .. cam+0x1A0; widened to cover the
+    // widescreen spawn columns (cam-0x30-E .. cam+0x120+E) on both sides.
+    int start = -IntMax(0x60, 0x30 + g_ws_margin);
+    int end = IntMax(0x1A0, 0x130 + g_ws_margin);
+    int columns = (end - start + 15) / 16;
+    mirror_current_layer1_xpos += start;
     misc_scratch7e18b6 = 0;
-    do {
+    for (int i = 0; i < columns; i++) {
       ParseLevelSpriteList_Entry2();
       ParseLevelSpriteList_Entry2();
       mirror_current_layer1_xpos += 16;
-    } while (++misc_scratch7e18b6 < 0x20);
+      misc_scratch7e18b6++;
+    }
     mirror_current_layer1_xpos = old_x;
     camera_layer1_scrolling_direction = v6;
   }
@@ -5363,8 +5377,9 @@ LABEL_10:
         return;
     }
     uint8 r1 = r3 | counter_global_frames & 1;
+    // Even entries are right-side limits, odd ones left-side; widen both.
     uint16 xpos = PAIR16(kSubOffscreen_Bank02_DATA_02D00F[r1], kSubOffscreen_Bank02_DATA_02D007[r1]) +
-        mirror_current_layer1_xpos - GetSprXPos(k);
+        ((r1 & 1) ? -g_ws_margin : g_ws_margin) + mirror_current_layer1_xpos - GetSprXPos(k);
     uint8 v3 = (xpos >> 8);
     if (r1 & 1)
       v3 ^= 0x80;
@@ -5551,7 +5566,8 @@ PointU8 AimTowardsPlayer_Bank23(uint8 k, uint8 a) {  // 02d2fb
 GetDrawInfoRes GetDrawInfo_Bank23_ReturnsTwice(uint8 k) {  // 02d378
   spr_yoffscreen_flag[k] = 0;
   spr_xoffscreen_flag[k] = (uint16)(GetSprXPos(k) - mirror_current_layer1_xpos) >= 256;
-  bool carry = (uint16)(GetSprXPos(k) - mirror_current_layer1_xpos + 0x40) >= 0x180;
+  // Not drawn when more than 0x40 px outside the (widened) view
+  bool carry = (uint16)(GetSprXPos(k) - mirror_current_layer1_xpos + 0x40 + g_ws_margin) >= 0x180 + 2 * g_ws_margin;
   spr_table15c4[k] = carry;
   if (carry) {
     return (GetDrawInfoRes) { .idx = 0xff, .x = 0, .y = 0 };

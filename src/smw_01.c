@@ -3041,9 +3041,11 @@ GetDrawInfoRes GetDrawInfo_Bank01_ReturnsTwice(uint8 k) {  // 01a365
   uint8 r0 = spr_xpos_lo[k] - mirror_current_layer1_xpos;
   uint8 r1 = spr_ypos_lo[k] - mirror_current_layer1_ypos;
 
-  uint16 tx = GetSprXPos(k) + 0x40 - mirror_current_layer1_xpos;
-  spr_table15c4[k] = (tx >= 0x180);
-  if (tx >= 0x180) {
+  // Not drawn when more than 0x40 px outside the (widened) view
+  uint16 tx = GetSprXPos(k) + 0x40 + g_ws_margin - mirror_current_layer1_xpos;
+  bool far_offscreen = tx >= 0x180 + 2 * g_ws_margin;
+  spr_table15c4[k] = far_offscreen;
+  if (far_offscreen) {
     return (GetDrawInfoRes) { .idx = 0xff, .x = r0, .y = r1 };
   } else {
     uint8 v2 = (spr_current_status[k] != 9 && (spr_property_bits190f[k] & 0x20) != 0) ? 1 : 0;
@@ -3697,8 +3699,9 @@ void SubOffscreen_Bank01_01AC33(uint8 k, uint8 r3) {  // 01ac33
         SubOffscreen_Bank01_EraseSprite(k);
       } else if ((spr_property_bits167a[k] & 4) == 0) {
         uint8 v4 = r3 | counter_global_frames & 1;
+        // Even entries are right-side limits, odd ones left-side; widen both.
         uint16 t = PAIR16(kSubOffscreen_Bank01_SpriteOffScreen2_Hi[v4], kSubOffscreen_Bank01_SpriteOffScreen2_Lo[v4]) +
-            mirror_current_layer1_xpos - GetSprXPos(k);
+            ((v4 & 1) ? -g_ws_margin : g_ws_margin) + mirror_current_layer1_xpos - GetSprXPos(k);
         uint8 r0 = (t >> 8) ^ (v4 & 1 ? 0x80 : 0);
         if ((r0 & 0x80) != 0)
           SubOffscreen_Bank01_EraseSprite(k);

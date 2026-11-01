@@ -14,7 +14,8 @@ static uint8 RtlApuReadReg(int reg);
 void SmwSavePlaythroughSnapshot();
 void SmwLoadNextPlaybackSnapshot();
 
-uint8 g_ram[0x20000];
+uint8 g_ram[kRamSize];
+bool g_more_sprite_slots;
 uint8 *g_sram;
 int g_sram_size;
 const uint8 *g_rom;

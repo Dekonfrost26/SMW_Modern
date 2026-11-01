@@ -335,11 +335,11 @@ LABEL_11:
   player_xspeed = 8;
   HandlePlayerPoseAndAnimationTimersDuringEnding();
   SetSprXYPos(0, 82, 143);
-  spr_oamindex[0] = -96;
+  SPR(spr_oamindex, 0) = -96;
   SpawnEndingYoshiSpriteAndDrawPlayer();
   uint8 r0 = 81;
-  uint8 r2 = kGameMode1B_EndingCinema_PeachOnYoshiOffset[spr_table1602[0]] - 123;
-  DrawCreditsPeachRedAndYellowYoshi_Peach(0, 4 * spr_table1602[0], r0, r2);
+  uint8 r2 = kGameMode1B_EndingCinema_PeachOnYoshiOffset[SPR(spr_table1602, 0)] - 123;
+  DrawCreditsPeachRedAndYellowYoshi_Peach(0, 4 * SPR(spr_table1602, 0), r0, r2);
   MakeCreditsEggsBounce(-96);
   r2 = 16;
   DrawEndingBabyYoshis(r2);
@@ -458,7 +458,7 @@ void WalkingIntoYoshisHouseDuringEnding_0CA1F6() {  // 0ca1f6
     HandlePlayerPoseAndAnimationTimersDuringEnding_0CA764();
     SpawnEndingYoshiSpriteAndDrawPlayer_0CA7B4();
     if (!l1_l2_scroll_spr_current_state[0]) {
-      uint8 r0 = spr_xpos_lo[0];
+      uint8 r0 = SPR(spr_xpos_lo, 0);
       r2 = -97;
       DrawCameraFacingEndingYoshis_BlueYoshi(0xB4, 0, 1, r0, r2);
     }
@@ -474,7 +474,7 @@ void WalkingIntoYoshisHouseDuringEnding_0CA1F6() {  // 0ca1f6
     HandlePlayerPoseAndAnimationTimersDuringEnding();
     SetSprXPos(0, PAIR16(sprites_cutscene_sprite_xpos_hi[0], sprites_cutscene_sprite_xpos_lo[0]) + 48);
     SetSprYPos(0, 0x160);
-    spr_oamindex[0] = 48;
+    SPR(spr_oamindex, 0) = 48;
     SpawnEndingYoshiSpriteAndDrawPlayer();
     uint16 r0w = PAIR16(sprites_cutscene_sprite_xpos_hi[0], sprites_cutscene_sprite_xpos_lo[0]) + 16;
     r2 = -97;
@@ -631,7 +631,7 @@ void YoshisWatchInExcitementDuringEnding_0CA4E9() {  // 0ca4e9
 }
 
 void YoshisWatchInExcitementDuringEnding_0CA510(uint8 j) {  // 0ca510
-  uint8 r0 = spr_xpos_lo[0];
+  uint8 r0 = SPR(spr_xpos_lo, 0);
   uint8 r2 = -97;
   DrawCameraFacingEndingYoshis_BlueYoshi(0xB4, j, 1, r0, r2);
   WalkingIntoYoshisHouseDuringEnding_0CA1F6();
@@ -741,7 +741,7 @@ void EveryoneCheeringDuringEnding() {  // 0ca6b0
   HandlePlayerPoseAndAnimationTimersDuringEnding_0CA764();
   SpawnEndingYoshiSpriteAndDrawPlayer_0CA7B4();
   uint8 v0 = 2 * kProcessCheeringYoshis_DATA_0CA311[(uint8)misc_layer3_xspeed];
-  uint8 r0 = spr_xpos_lo[0];
+  uint8 r0 = SPR(spr_xpos_lo, 0);
   r2 = sprites_cutscene_sprite_ypos_lo[1];
   DrawCameraFacingEndingYoshis_BlueYoshi(0xB4, v0, 1, r0, r2);
   uint16 r0w = PAIR16(sprites_cutscene_sprite_xpos_hi[0], sprites_cutscene_sprite_xpos_lo[0]) + 16;
@@ -781,16 +781,16 @@ void HandlePlayerPoseAndAnimationTimersDuringEnding_0CA764() {  // 0ca764
 
 void SpawnEndingYoshiSpriteAndDrawPlayer() {  // 0ca778
   spr_current_slotid = 0;
-  spr_spriteid[0] = 53;
-  uint8 v1 = spr_table1602[0];
+  SPR(spr_spriteid, 0) = 53;
+  uint8 v1 = SPR(spr_table1602, 0);
   InitializeNormalSpriteRAMTables(0);
-  spr_table1602[0] = v1;
-  spr_table00c2[0] = 2;
-  spr_table157c[0] = 1;
+  SPR(spr_table1602, 0) = v1;
+  SPR(spr_table00c2, 0) = 2;
+  SPR(spr_table157c, 0) = 1;
   uint16 t = scroll_spr_layer_index + 56;
   scroll_spr_layer_index = t;
-  if (t >= 256 && ++spr_table1602[0] >= 3)
-    spr_table1602[0] = 0;
+  if (t >= 256 && ++SPR(spr_table1602, 0) >= 3)
+    SPR(spr_table1602, 0) = 0;
   yoshi_stray_yoshi_flag = 1;
   SpawnEndingYoshiSpriteAndDrawPlayer_0CA7B4();
 }

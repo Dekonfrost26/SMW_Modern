@@ -1848,7 +1848,7 @@ bool LmHook_WantEraseSprite(uint16 k, uint16 y) {
   y -= mirror_current_layer1_ypos;
   if (sign16(y - max_y_offset_from_screen_to_spawn) && !sign16(y - min_y_offset_from_screen_to_spawn))
     return false;
-  if (spr_property_bits167a[k] & 4 || misc_nmito_use_flag == 0x80)
+  if (SPR(spr_property_bits167a, k) & 4 || misc_nmito_use_flag == 0x80)
     return false;
   return true;
 }

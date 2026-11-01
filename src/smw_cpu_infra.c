@@ -108,6 +108,8 @@ uint32 PatchBugs_SMW1(void) {
     g_ram[0xe] = g_cpu->a;
     return 0x3b832;
   } else if (FixBugHook(0x2F2FC)) {  // Wiggler reads from spr_ylos_lo instead of hi
+    // Emulated-ROM hooks index flat SNES RAM with the CPU's X register, so they
+    // must not use SPR() (which maps slots 12+ to the PC RAM extension).
     g_cpu->a = spr_ypos_hi[g_cpu->x & 0xff];
     return 0x2F2Fe;
   } else if (FixBugHook(0xCAC7)) {

@@ -6399,9 +6399,9 @@ void PlayerState00_00F8F2() {  // 00f8f2
     }
     if (kPlayerState00_DATA_00F8E8[misc_currently_active_boss] == 42) {
       uint8 v1 = 0;
-      int16 t = spr_table160e[9] + 1 - player_xpos;
+      int16 t = SPR(spr_table160e, 9) + 1 - player_xpos;
       if (t > 0) {
-        t = player_xpos + 15 - spr_table1534[9];
+        t = player_xpos + 15 - SPR(spr_table1534, 9);
         v1 = 1;
       }
       HandlePlayerLevelColl_00E9C8(v1, t < 0);
@@ -6452,12 +6452,12 @@ uint8 CheckWhatSlopeSpriteIsOn(uint8 a, uint8 r10, uint8 r12, uint8 *slope_type)
 
 void RunPlayerBlockCode_SpawnFlatPalaceSwitch() {  // 00fa45
   timer_shake_layer1 = 32;
-  spr_spriteid[2] = 96;
-  spr_current_status[2] = 8;
+  SPR(spr_spriteid, 2) = 96;
+  SPR(spr_current_status, 2) = 8;
   SetSprXPos(2, blocks_xpos & ~0xf);
   SetSprYPos(2, (blocks_ypos & ~0xf) + 16);
   InitializeNormalSpriteRAMTables(2);
-  spr_decrementing_table1540[2] = 95;
+  SPR(spr_decrementing_table1540, 2) = 95;
 }
 
 void Spr07B_GoalTape_TriggerGoalTape() {  // 00fa80
@@ -6467,15 +6467,15 @@ void Spr07B_GoalTape_TriggerGoalTape() {  // 00fa80
   gen_spr_spriteid = 0;
   counter_current_silver_coins = 0;
   for (uint8 i = 11; (i & 0x80) == 0; --i) {
-    if (spr_current_status[i] >= 8) {
-      if (spr_current_status[i] == 11) {
+    if (SPR(spr_current_status, i) >= 8) {
+      if (SPR(spr_current_status, i) == 11) {
         Spr07B_GoalTape_LvlEndPowerUp(i);
-      } else if (spr_spriteid[i] != 123 && spr_yoffscreen_flag[i] | spr_xoffscreen_flag[i] || (spr_property_bits1686[i] & 0x20) != 0) {
-        if ((spr_property_bits190f[i] & 2) == 0)
-          spr_current_status[i] = 0;
+      } else if (SPR(spr_spriteid, i) != 123 && SPR(spr_yoffscreen_flag, i) | SPR(spr_xoffscreen_flag, i) || (SPR(spr_property_bits1686, i) & 0x20) != 0) {
+        if ((SPR(spr_property_bits190f, i) & 2) == 0)
+          SPR(spr_current_status, i) = 0;
       } else {
-        spr_decrementing_table1540[i] = 16;
-        spr_current_status[i] = 6;
+        SPR(spr_decrementing_table1540, i) = 16;
+        SPR(spr_current_status, i) = 6;
       }
     }
   }
@@ -6489,7 +6489,7 @@ void Spr07B_GoalTape_LvlEndPowerUp(uint8 j) {  // 00fb00
     v1 = 4;
   if (player_riding_yoshi_flag)
     v1 = 5;
-  uint8 v2 = spr_spriteid[j];
+  uint8 v2 = SPR(spr_spriteid, j);
   switch (v2) {
   case 0x2F:
   case 0x3E: goto LABEL_11;
@@ -6509,15 +6509,15 @@ LABEL_11:
     r15 = v3 & 0xF;
     v3 = 120;
   }
-  spr_spriteid[j] = v3;
+  SPR(spr_spriteid, j) = v3;
   if (v3 == 118)
     ++unusedram_got_invincible_star_from_goal;
   InitializeNormalSpriteRAMTables(j);
-  spr_table1594[j] = r15;
-  spr_current_status[j] = 12;
-  spr_yspeed[j] = -48;
-  spr_xspeed[j] = 5;
-  spr_decrementing_table154c[j] = 32;
+  SPR(spr_table1594, j) = r15;
+  SPR(spr_current_status, j) = 12;
+  SPR(spr_yspeed, j) = -48;
+  SPR(spr_xspeed, j) = 5;
+  SPR(spr_decrementing_table154c, j) = 32;
   io_sound_ch1 = 12;
   uint8 v4 = 3;
   while (smoke_spr_spriteid[v4]) {
@@ -6525,32 +6525,32 @@ LABEL_11:
       return;
   }
   smoke_spr_spriteid[v4] = 1;
-  smoke_spr_ypos_lo[v4] = spr_ypos_lo[j];
-  smoke_spr_xpos_lo[v4] = spr_xpos_lo[j];
+  smoke_spr_ypos_lo[v4] = SPR(spr_ypos_lo, j);
+  smoke_spr_xpos_lo[v4] = SPR(spr_xpos_lo, j);
   smoke_spr_timer[v4] = 27;
 }
 
 void SprStatus06_GoalCoins(uint8 k) {  // 00fbb4
   AddSprXPos(k, (int8)misc_layer1_xdisp);
-  uint8 v3 = spr_decrementing_table1540[k];
+  uint8 v3 = SPR(spr_decrementing_table1540, k);
   if (v3) {
     if (v3 == 1)
-      spr_yspeed[k] = -48;
-    spr_table15f6[k] = 4;
+      SPR(spr_yspeed, k) = -48;
+    SPR(spr_table15f6, k) = 4;
     GenericGFXRtDraw1Tile16x16(k);
-    get_OamEnt(oam_buf, spr_oamindex[k])[64].charnum = kSprStatus06_GoalCoins_SmokeTiles[spr_decrementing_table1540[k] >> 2];
+    get_OamEnt(oam_buf, SPR(spr_oamindex, k))[64].charnum = kSprStatus06_GoalCoins_SmokeTiles[SPR(spr_decrementing_table1540, k) >> 2];
   } else {
-    ++spr_table1570[k];
+    ++SPR(spr_table1570, k);
     UpdateNormalSpritePosition_Y(k);
-    spr_yspeed[k] += 2;
-    if (!sign8(spr_yspeed[k] - 32)) {
+    SPR(spr_yspeed, k) += 2;
+    if (!sign8(SPR(spr_yspeed, k) - 32)) {
       GiveCoins_OneCoin();
       uint8 v4 = counter_current_silver_coins;
       if (counter_current_silver_coins >= 0xD)
         v4 = 13;
       GivePoints(k, v4);
       counter_current_silver_coins += 2;
-      spr_current_status[k] = 0;
+      SPR(spr_current_status, k) = 0;
     }
     PowerUpAndItemGFXRt_DrawCoinSprite(k);
   }
@@ -6558,7 +6558,7 @@ void SprStatus06_GoalCoins(uint8 k) {  // 00fbb4
 
 void UnusedYoshiRelatedRoutine() {  // 00fc23
   uint8 j = 11;
-  while (spr_current_status[j] != 8 || spr_spriteid[j] != 53) {
+  while (SPR(spr_current_status, j) != 8 || SPR(spr_spriteid, j) != 53) {
     if ((--j & 0x80) != 0) {
       yoshi_carry_over_levels_flag = 0;
       return;
@@ -6566,13 +6566,13 @@ void UnusedYoshiRelatedRoutine() {  // 00fc23
   }
   yoshi_carry_over_levels_flag = 1;
   yoshi_yoshi_has_wings = 0;
-  spr_table15f6[j] = spr_table15f6[j] & 0xF1 | 0xA;
+  SPR(spr_table15f6, j) = SPR(spr_table15f6, j) & 0xF1 | 0xA;
   if (!player_riding_yoshi_flag) {
     SetSprXPos(j, mirror_current_layer1_xpos - 16);
     SetSprYPos(j, player_ypos);
-    spr_table00c2[j] = 3;
-    spr_table157c[j] = 0;
-    spr_xspeed[j] = 16;
+    SPR(spr_table00c2, j) = 3;
+    SPR(spr_table157c, j) = 0;
+    SPR(spr_xspeed, j) = 16;
   }
 }
 
@@ -6587,27 +6587,27 @@ void SpawnMountedYoshiOnLevelLoad() {  // 00fc7a
         j = 3;
     }
   }
-  spr_current_status[j] = 8;
-  spr_spriteid[j] = 53;
+  SPR(spr_current_status, j) = 8;
+  SPR(spr_spriteid, j) = 53;
   SetSprXPos(j, player_xpos);
   player_ypos -= 16;
   SetSprYPos(j, player_ypos);
   InitializeNormalSpriteRAMTables(j);
-  spr_decrementing_table1fe2[j] = 4;
-  spr_table15f6[j] = yoshi_current_yoshi_color;
+  SPR(spr_decrementing_table1fe2, j) = 4;
+  SPR(spr_table15f6, j) = yoshi_current_yoshi_color;
   if (in_yoshi_wings_bonus_area)
-    spr_table15f6[j] = 6;
+    SPR(spr_table15f6, j) = 6;
   ++player_riding_yoshi_flag;
-  ++spr_table00c2[j];
-  spr_table157c[j] = player_facing_direction ^ 1;
-  --spr_table160e[j];
+  ++SPR(spr_table00c2, j);
+  SPR(spr_table157c, j) = player_facing_direction ^ 1;
+  --SPR(spr_table160e, j);
   sprites_yoshi_slot_index = j + 1;
   yoshi_stray_yoshi_flag = j + 1;
 }
 
 void ClearOutNormalSpriteSlots() {  // 00fcec
   for (int8 i = 11; i >= 0; --i)
-    spr_current_status[(uint8)i] = 0;
+    SPR(spr_current_status, (uint8)i) = 0;
 }
 
 void Spr029_KoopaKids_Init_SetPosition(uint8 k) {  // 00fcf5

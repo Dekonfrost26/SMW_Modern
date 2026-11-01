@@ -2576,9 +2576,9 @@ static const uint8 kSpr07B_GoalTape_DATA_07F1A0[10] = { 0x0, 0xd, 0x13, 0x1d, 0x
 static const uint8 kSpr07B_GoalTape_DATA_07F24E[4] = { 0x66, 0x66, 0x6e, 0xff,  };
 
 void Spr07B_GoalTape_BonusStarNumbersDraw(uint8 k) {  // 07f1ca
-  uint16 R4_ = spr_decrementing_table1540[k];
+  uint16 R4_ = SPR(spr_decrementing_table1540, k);
   uint8 R2_ = 0;
-  uint8 v2 = kSpr07B_GoalTape_BonusStarsEarned[spr_table1594[k] >> 2];
+  uint8 v2 = kSpr07B_GoalTape_BonusStarsEarned[SPR(spr_table1594, k) >> 2];
   if (v2 >> 4)
     Spr07B_GoalTape_07F200(kSpr07B_GoalTape_DATA_07F1A0[v2 >> 4], 0x20, R2_, R4_);
   uint8 v1 = kSpr07B_GoalTape_DATA_07F1A0[v2 & 0xF];
@@ -2607,7 +2607,7 @@ uint8 Spr07B_GoalTape_07F200(uint8 k, uint8 j, uint16 R2, uint16 R4_) {  // 07f2
 }
 
 void Spr07B_GoalTape_GiveBonusStars(uint8 k) {  // 07f252
-  counter_bonus_stars_earned = kSpr07B_GoalTape_BonusStarsEarned[spr_table1594[k] >> 2];
+  counter_bonus_stars_earned = kSpr07B_GoalTape_BonusStarsEarned[SPR(spr_table1594, k) >> 2];
   if (counter_bonus_stars_earned == 80)
     GivePoints(k, 0xA);
 }

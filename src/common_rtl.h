@@ -36,7 +36,17 @@ void SimpleHdma_Init(SimpleHdma *c, DmaChannel *dc);
 void SimpleHdma_DoLine(SimpleHdma *c);
 void RtlHdmaSetup(uint8 which, uint8 transfer_unit, uint8 reg, uint32 addr, uint8 indirect_bank);
 
-extern uint8 g_ram[0x20000];
+// 128 KB SNES work RAM, followed by a PC extension. The extension shadows
+// addresses 0x0000-0x21FF and holds slots 12+ of the per-slot sprite tables
+// (see SPR() in variables.h and docs/SPRITES.md).
+enum {
+  kSnesRamSize = 0x20000,
+  kRamExtSize = 0x2200,
+  kRamSize = kSnesRamSize + kRamExtSize,
+};
+extern uint8 g_ram[kRamSize];
+// True when normal sprite slots 12+ are in use (stored in the RAM extension).
+extern bool g_more_sprite_slots;
 extern uint8 *g_sram;
 extern int g_sram_size;
 extern const uint8 *g_rom;

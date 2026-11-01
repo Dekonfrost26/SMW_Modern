@@ -14,56 +14,56 @@ static const uint8 kSpawnSpinJumpStars_InitialYSpeed[4] = { 0xf0, 0xf0, 0x10, 0x
 const uint16 kCircleCoordinates[256] = { 0x0, 0x3, 0x6, 0x9, 0xc, 0xf, 0x12, 0x15, 0x19, 0x1c, 0x1f, 0x22, 0x25, 0x28, 0x2b, 0x2e, 0x31, 0x35, 0x38, 0x3b, 0x3e, 0x41, 0x44, 0x47, 0x4a, 0x4d, 0x50, 0x53, 0x56, 0x59, 0x5c, 0x5f, 0x61, 0x64, 0x67, 0x6a, 0x6d, 0x70, 0x73, 0x75, 0x78, 0x7b, 0x7e, 0x80, 0x83, 0x86, 0x88, 0x8b, 0x8e, 0x90, 0x93, 0x95, 0x98, 0x9b, 0x9d, 0x9f, 0xa2, 0xa4, 0xa7, 0xa9, 0xab, 0xae, 0xb0, 0xb2, 0xb5, 0xb7, 0xb9, 0xbb, 0xbd, 0xbf, 0xc1, 0xc3, 0xc5, 0xc7, 0xc9, 0xcb, 0xcd, 0xcf, 0xd1, 0xd3, 0xd4, 0xd6, 0xd8, 0xd9, 0xdb, 0xdd, 0xde, 0xe0, 0xe1, 0xe3, 0xe4, 0xe6, 0xe7, 0xe8, 0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xf1, 0xf2, 0xf3, 0xf4, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xf9, 0xfa, 0xfb, 0xfb, 0xfc, 0xfc, 0xfd, 0xfd, 0xfe, 0xfe, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x100, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfc, 0xfc, 0xfb, 0xfb, 0xfa, 0xf9, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf1, 0xef, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe8, 0xe7, 0xe6, 0xe4, 0xe3, 0xe1, 0xe0, 0xde, 0xdd, 0xdb, 0xd9, 0xd8, 0xd6, 0xd4, 0xd3, 0xd1, 0xcf, 0xcd, 0xcb, 0xc9, 0xc7, 0xc5, 0xc3, 0xc1, 0xbf, 0xbd, 0xbb, 0xb9, 0xb7, 0xb5, 0xb2, 0xb0, 0xae, 0xab, 0xa9, 0xa7, 0xa4, 0xa2, 0x9f, 0x9d, 0x9b, 0x98, 0x95, 0x93, 0x90, 0x8e, 0x8b, 0x88, 0x86, 0x83, 0x80, 0x7e, 0x7b, 0x78, 0x75, 0x73, 0x70, 0x6d, 0x6a, 0x67, 0x64, 0x61, 0x5f, 0x5c, 0x59, 0x56, 0x53, 0x50, 0x4d, 0x4a, 0x47, 0x44, 0x41, 0x3e, 0x3b, 0x38, 0x35, 0x31, 0x2e, 0x2b, 0x28, 0x25, 0x22, 0x1f, 0x1c, 0x19, 0x15, 0x12, 0xf, 0xc, 0x9, 0x6, 0x3,  };
 
 void InitializeNormalSpriteRAMTables_ClearTables(uint8 k) {  // 07f722
-  spr_table164a[k] = 0;
-  spr_table1632[k] = 0;
-  spr_table00c2[k] = 0;
-  spr_table151c[k] = 0;
-  spr_table1528[k] = 0;
-  spr_table1534[k] = 0;
-  spr_table157c[k] = 0;
-  spr_table1588[k] = 0;
-  spr_table15c4[k] = 0;
-  spr_table1602[k] = 0;
-  spr_decrementing_table1540[k] = 0;
-  spr_decrementing_table154c[k] = 0;
-  spr_decrementing_table1558[k] = 0;
-  spr_decrementing_table1564[k] = 0;
-  spr_decrementing_table1fe2[k] = 0;
-  spr_table1626[k] = 0;
-  spr_table1570[k] = 0;
-  spr_xspeed[k] = 0;
-  spr_sub_xpos[k] = 0;
-  spr_yspeed[k] = 0;
-  spr_sub_ypos[k] = 0;
-  spr_no_level_collision_flag[k] = 0;
-  spr_table15d0[k] = 0;
-  spr_decrementing_table163e[k] = 0;
-  spr_property_bits1656[k] = 0;
-  spr_property_bits1662[k] = 0;
-  spr_property_bits166e[k] = 0;
-  spr_property_bits167a[k] = 0;
-  spr_property_bits1686[k] = 0;
-  spr_table187b[k] = 0;
-  spr_table160e[k] = 0;
-  spr_table1594[k] = 0;
-  spr_table1504[k] = 0;
-  spr_unused_table1fd6[k] = 0;
-  spr_xoffscreen_flag[k] = 1;
+  SPR(spr_table164a, k) = 0;
+  SPR(spr_table1632, k) = 0;
+  SPR(spr_table00c2, k) = 0;
+  SPR(spr_table151c, k) = 0;
+  SPR(spr_table1528, k) = 0;
+  SPR(spr_table1534, k) = 0;
+  SPR(spr_table157c, k) = 0;
+  SPR(spr_table1588, k) = 0;
+  SPR(spr_table15c4, k) = 0;
+  SPR(spr_table1602, k) = 0;
+  SPR(spr_decrementing_table1540, k) = 0;
+  SPR(spr_decrementing_table154c, k) = 0;
+  SPR(spr_decrementing_table1558, k) = 0;
+  SPR(spr_decrementing_table1564, k) = 0;
+  SPR(spr_decrementing_table1fe2, k) = 0;
+  SPR(spr_table1626, k) = 0;
+  SPR(spr_table1570, k) = 0;
+  SPR(spr_xspeed, k) = 0;
+  SPR(spr_sub_xpos, k) = 0;
+  SPR(spr_yspeed, k) = 0;
+  SPR(spr_sub_ypos, k) = 0;
+  SPR(spr_no_level_collision_flag, k) = 0;
+  SPR(spr_table15d0, k) = 0;
+  SPR(spr_decrementing_table163e, k) = 0;
+  SPR(spr_property_bits1656, k) = 0;
+  SPR(spr_property_bits1662, k) = 0;
+  SPR(spr_property_bits166e, k) = 0;
+  SPR(spr_property_bits167a, k) = 0;
+  SPR(spr_property_bits1686, k) = 0;
+  SPR(spr_table187b, k) = 0;
+  SPR(spr_table160e, k) = 0;
+  SPR(spr_table1594, k) = 0;
+  SPR(spr_table1504, k) = 0;
+  SPR(spr_unused_table1fd6, k) = 0;
+  SPR(spr_xoffscreen_flag, k) = 1;
 }
 
 void InitializeNormalSpriteRAMTables_YXPPCCCTAndPropertyTables(uint8 k) {  // 07f78b
-  spr_table15f6[k] = kInitializeNormalSpriteRAMTables_Sprite166EVals[spr_spriteid[k]] & 0xF;
+  SPR(spr_table15f6, k) = kInitializeNormalSpriteRAMTables_Sprite166EVals[SPR(spr_spriteid, k)] & 0xF;
   InitializeNormalSpriteRAMTables_PropertyTables(k);
 }
 
 void InitializeNormalSpriteRAMTables_PropertyTables(uint8 k) {  // 07f7a0
-  uint8 v2 = spr_spriteid[k];
-  spr_property_bits1656[k] = kInitializeNormalSpriteRAMTables_Sprite1656Vals[v2];
-  spr_property_bits1662[k] = kInitializeNormalSpriteRAMTables_Sprite1662Vals[v2];
-  spr_property_bits166e[k] = kInitializeNormalSpriteRAMTables_Sprite166EVals[v2];
-  spr_property_bits167a[k] = kInitializeNormalSpriteRAMTables_Sprite167AVals[v2];
-  spr_property_bits1686[k] = kInitializeNormalSpriteRAMTables_Sprite1686Vals[v2];
-  spr_property_bits190f[k] = kInitializeNormalSpriteRAMTables_Sprite190FVals[v2];
+  uint8 v2 = SPR(spr_spriteid, k);
+  SPR(spr_property_bits1656, k) = kInitializeNormalSpriteRAMTables_Sprite1656Vals[v2];
+  SPR(spr_property_bits1662, k) = kInitializeNormalSpriteRAMTables_Sprite1662Vals[v2];
+  SPR(spr_property_bits166e, k) = kInitializeNormalSpriteRAMTables_Sprite166EVals[v2];
+  SPR(spr_property_bits167a, k) = kInitializeNormalSpriteRAMTables_Sprite167AVals[v2];
+  SPR(spr_property_bits1686, k) = kInitializeNormalSpriteRAMTables_Sprite1686Vals[v2];
+  SPR(spr_property_bits190f, k) = kInitializeNormalSpriteRAMTables_Sprite190FVals[v2];
 }
 
 void InitializeNormalSpriteRAMTables(uint8 k) {  // 07f7d2

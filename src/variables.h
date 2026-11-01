@@ -1,3 +1,17 @@
+#ifndef SMW_SPR_SLOT_ACCESS
+#define SMW_SPR_SLOT_ACCESS
+#include "common_rtl.h"
+// Per-slot normal sprite tables. Slots 0-11 are at the table's original
+// address; slots 12+ are in the RAM extension, kSnesRamSize bytes higher.
+// Use SPR(spr_table, slot) instead of spr_table[slot].
+// While extra slots are off, an index >= 12 can only be an original-style
+// stride into the following table, so it keeps flat SNES addressing.
+static inline uint8 *SprSlotPtr(uint8 *base, int k) {
+  return (k < 12 || !g_more_sprite_slots) ? base + k : base + kSnesRamSize + (k - 12);
+}
+#define SPR(tbl, k) (*SprSlotPtr((tbl), (k)))
+#endif
+
 //#define r0w (*(uint16*)(g_ram+0x0))
 //#define r1w (*(uint16*)(g_ram+0x1))
 //#define r2w (*(uint16*)(g_ram+0x2))

@@ -144,6 +144,11 @@ struct Ppu {
   PpuPixelPrioBufs objBuffer;
   uint32_t renderPitch;
   uint8_t *renderBuffer;
+  // Optional second page of 128 OAM entries (same layout as oam/highOam),
+  // drawn behind the regular sprites. Used for sprite slots beyond the
+  // original limit. NULL when unused.
+  const uint16_t *extOam;
+  const uint8_t *extHighOam;
   uint8_t brightnessMult[32 + 31];
   uint8_t brightnessMultHalf[32 * 2];
   // Indexed by coordinate + kPpuExtraLeftRight (coordinates can be negative in the margins)

@@ -780,44 +780,40 @@ static NOINLINE void PpuDrawWholeLine(Ppu *ppu, uint y) {
 
 }
 
-static bool ppu_evaluateSprites(Ppu* ppu, int line) {
+// Evaluates one page of OAM entries for a line. Returns true when the
+// per-line sprite/tile limits stop evaluation.
+static bool PpuEvaluateOamPage(Ppu *ppu, int line, const uint16_t *oam, const uint8_t *high, int count,
+                               uint8_t index, int *spritesFound, int *tilesFound) {
   static const uint8 spriteSizes[8][2] = {
     {8, 16}, {8, 32}, {8, 64}, {16, 32},
     {16, 64}, {32, 64}, {16, 32}, {16, 32}
   };
-
-  // TODO: iterate over oam normally to determine in-range sprites,
-  //   then iterate those in-range sprites in reverse for tile-fetching
-  // TODO: rectangular sprites, wierdness with sprites at -256
-  uint8_t index = PPU_objPriority(ppu) ? (ppu->oamaddl & 0xfe) : 0;
-  int spritesFound = 0;
-  int tilesFound = 0;
-  for(int i = 0; i < 128; i++) {
-    uint8_t y = ppu->oam[index] >> 8;
+  for(int i = 0; i < count; i++) {
+    uint8_t y = oam[index] >> 8;
     // check if the sprite is on this line and get the sprite size
     uint8_t row = line - y;
-    int spriteSize = spriteSizes[PPU_objSize(ppu)][(ppu->highOam[index >> 3] >> ((index & 7) + 1)) & 1];
+    int spriteSize = spriteSizes[PPU_objSize(ppu)][(high[index >> 3] >> ((index & 7) + 1)) & 1];
     int spriteHeight = PPU_objInterlace(ppu) ? spriteSize / 2 : spriteSize;
     if(row < spriteHeight) {
       // in y-range, get the x location, using the high bit as well
-      int x = ppu->oam[index] & 0xff;
-      x |= ((ppu->highOam[index >> 3] >> (index & 7)) & 1) << 8;
+      int x = oam[index] & 0xff;
+      x |= ((high[index >> 3] >> (index & 7)) & 1) << 8;
       // X is 9 bits. Values just past the right edge are shown in the right
       // widescreen margin instead of wrapping around to the left side.
       if(x >= 256 + ppu->extraRightCur) x -= 512;
       // if in x-range
       if(x > -spriteSize - ppu->extraLeftCur) {
         // break if we found 32 sprites already
-        spritesFound++;
-        if(spritesFound > 32) {
+        (*spritesFound)++;
+        if(*spritesFound > 32) {
           ppu->rangeOver = true;
           if (!g_ppu_no_sprite_limits)
-            break;
+            return true;
         }
         // update row according to obj-interlace
         if(PPU_objInterlace(ppu)) row = row * 2 + (ppu->evenFrame ? 0 : 1);
         // get some data for the sprite and y-flip row if needed
-        int oam1 = ppu->oam[index + 1];
+        int oam1 = oam[index + 1];
         int tile = oam1 & 0xff;
         int objAdr = (oam1 & 0x100) ? PPU_objTileAdr2(ppu) : PPU_objTileAdr1(ppu);
         int palette = (oam1 & 0xe00) >> 9;
@@ -831,8 +827,8 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
         for(int col = 0; col < spriteSize; col += 8) {
           if(col + x > -8 - ppu->extraLeftCur && col + x < 256 + ppu->extraRightCur) {
             // break if we found 34 8*1 slivers already
-            tilesFound++;
-            if(tilesFound > 34) {
+            (*tilesFound)++;
+            if(*tilesFound > 34) {
               ppu->timeOver = true;
               if (!g_ppu_no_sprite_limits)
                 break;
@@ -858,11 +854,25 @@ static bool ppu_evaluateSprites(Ppu* ppu, int line) {
 
           }
         }
-        if(tilesFound > 34 && !g_ppu_no_sprite_limits) break; // break out of sprite-loop if max tiles found
+        if(*tilesFound > 34 && !g_ppu_no_sprite_limits) return true; // stop: max tiles found
       }
     }
     index += 2;
   }
+  return false;
+}
+
+static bool ppu_evaluateSprites(Ppu* ppu, int line) {
+  // TODO: iterate over oam normally to determine in-range sprites,
+  //   then iterate those in-range sprites in reverse for tile-fetching
+  // TODO: rectangular sprites, wierdness with sprites at -256
+  uint8_t index = PPU_objPriority(ppu) ? (ppu->oamaddl & 0xfe) : 0;
+  int spritesFound = 0;
+  int tilesFound = 0;
+  bool stopped = PpuEvaluateOamPage(ppu, line, ppu->oam, ppu->highOam, 128, index, &spritesFound, &tilesFound);
+  // Extra OAM page (PC enhancement): drawn behind all regular sprites.
+  if (!stopped && ppu->extOam)
+    PpuEvaluateOamPage(ppu, line, ppu->extOam, ppu->extHighOam, 128, 0, &spritesFound, &tilesFound);
   return tilesFound != 0;
 }
 

@@ -85,6 +85,11 @@ walking enemy and is hurt (and respawned) by touching one from the side.
    button near the main player; `CheckPlayerPositionRelativeToSprite_*` use the
    nearest player via `Coop_NearestPlayerPos`.)
 4. Yoshi, cape, pipes, doors, keyholes, goal, overworld handling, saves.
+   (started: when the main player would die while another player is alive,
+   they go into a bubble instead and the level continues; the camera follows
+   the bubble toward the nearest living player. If nobody is left, or time
+   runs out, the original death happens. `Coop_TryBubbleMainPlayer`, called
+   from `DamagePlayer_PitFall`.)
 
 Each phase keeps single-player behaviour identical. Check with
 `VerifyAgainstRom = 1` while only one player is active.

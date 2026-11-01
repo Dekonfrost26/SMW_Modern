@@ -77,6 +77,9 @@ typedef struct CoopState {
   uint8 bubble[kCoopMaxPlayers];        // frames spent in a bubble (0 = not in one)
   uint16 bubble_x[kCoopMaxPlayers], bubble_y[kCoopMaxPlayers];  // bubble position (player box, world)
   uint8 pad_prev[kCoopMaxPlayers][2];   // previous held buttons, controllers 3-4
+  // Phase 4: the main player's bubble (frames, 0 = not in one) and position
+  uint8 main_bubble;
+  uint16 main_bubble_x, main_bubble_y;
 } CoopState;
 
 _Static_assert(sizeof(CoopState) <= kRamCoopSize, "co-op state must fit the RAM extension area");
@@ -147,7 +150,7 @@ void Coop_OnLevelLoad(void) {
 
 // ---------------------------------------------------------------------------
 // Bubbles: a player who dies or falls floats back to the main player and pops
-// out with any button once close (or by itself after a while).
+// out with B/Y/A/X once close (or by itself after a while).
 
 enum {
   kBubbleMinFrames = 40,    // before a bubble can pop
@@ -174,18 +177,50 @@ static void EnterBubble(int p) {
 
 static int Clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+static bool IsLivingExtra(int p) {
+  CoopState *cs = Coop();
+  return cs->active[p] && !cs->bubble[p] && *CtxByte(cs->ctx[p], 0x71) != 9;
+}
+
+// Position of the living player nearest to (x, y), excluding extra player
+// `skip`; the main player counts unless they're in a bubble. False if nobody
+// is alive.
+static bool NearestLivingPlayer(int x, int y, int skip, int *ox, int *oy) {
+  CoopState *cs = Coop();
+  int best = 1 << 30;
+  if (!cs->main_bubble) {
+    best = abs((int16)player_xpos - x) + abs((int16)player_ypos - y);
+    *ox = (int16)player_xpos, *oy = (int16)player_ypos;
+  }
+  for (int p = 1; p < kCoopMaxPlayers; p++) {
+    if (p == skip || !IsLivingExtra(p))
+      continue;
+    int px = (int16)CtxWord(cs->ctx[p], 0x94), py = (int16)CtxWord(cs->ctx[p], 0x96);
+    int d = abs(px - x) + abs(py - y);
+    if (d < best)
+      best = d, *ox = px, *oy = py;
+  }
+  return best != (1 << 30);
+}
+
 static void UpdateBubble(int p, uint8 press1, uint8 press2) {
   CoopState *cs = Coop();
   static const int8 kJoinOffsetX[kCoopMaxPlayers] = { 0, 20, -20, 40 };
-  int tx = (int16)player_xpos + kJoinOffsetX[p], ty = (int16)player_ypos - 24;
   int bx = (int16)cs->bubble_x[p], by = (int16)cs->bubble_y[p];
+  // Float toward the main player, or the nearest living player if the main
+  // player is in a bubble too
+  int tx = (int16)player_xpos, ty = (int16)player_ypos;
+  if (cs->main_bubble && !NearestLivingPlayer(bx, by, p, &tx, &ty))
+    tx = (int16)player_xpos, ty = (int16)player_ypos;
+  tx += kJoinOffsetX[p], ty -= 24;
   bx += Clamp(tx - bx, -kBubbleSpeed, kBubbleSpeed);
   by += Clamp(ty - by, -kBubbleSpeed, kBubbleSpeed);
   cs->bubble_x[p] = bx, cs->bubble_y[p] = by;
   if (cs->bubble[p] < 255)
     cs->bubble[p]++;
   bool close = abs(tx - bx) < 20 && abs(ty - by) < 24;
-  if (cs->bubble[p] >= kBubbleMinFrames && close && ((press1 | press2) || cs->bubble[p] >= kBubbleAutoPop)) {
+  if (cs->bubble[p] >= kBubbleMinFrames && close && (((press1 | press2) & 0xC0) || cs->bubble[p] >= kBubbleAutoPop) &&
+      !cs->main_bubble) {
     cs->bubble[p] = 0;
     SpawnAtMainPlayer(p, kJoinFlash);
     // Pop where the bubble is
@@ -229,7 +264,8 @@ uint16 Coop_NearestPlayerPos(uint16 sx, uint16 sy, uint16 main_x, uint16 main_y,
   if (!g_coop_enabled || g_coop_current_player)
     return want_y ? main_y : main_x;
   uint16 bx = main_x, by = main_y;
-  int best = abs((int16)(main_x - sx)) + abs((int16)(main_y - sy));
+  // A main player in a bubble isn't a target
+  int best = cs->main_bubble ? (1 << 30) : abs((int16)(main_x - sx)) + abs((int16)(main_y - sy));
   for (int p = 1; p < kCoopMaxPlayers; p++) {
     if (!cs->active[p] || cs->bubble[p])
       continue;
@@ -372,15 +408,92 @@ void Coop_BeginSpriteFrame(void) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4: main player bubble
+
+static bool g_allow_main_death;
+
+bool Coop_TryBubbleMainPlayer(void) {
+  CoopState *cs = Coop();
+  if (!g_coop_enabled || g_coop_current_player || g_allow_main_death || misc_game_mode != 0x14 || cs->main_bubble)
+    return false;
+  // Time up ends the level for everyone
+  if (!(counter_timer_ones | counter_timer_tens | counter_timer_hundreds))
+    return false;
+  bool someone_alive = false;
+  for (int p = 1; p < kCoopMaxPlayers; p++)
+    someone_alive |= IsLivingExtra(p);
+  if (!someone_alive)
+    return false;
+  int16 x = player_xpos, y = player_ypos, cy = mirror_current_layer1_ypos;
+  cs->main_bubble_x = x;
+  cs->main_bubble_y = Clamp(y, cy - 8, cy + 0xB0);
+  cs->main_bubble = 1;
+  // Inert while in the bubble: state 0x0D does nothing, and sprite contact
+  // ignores players whose state isn't 0.
+  player_current_state = 0x0D;
+  player_xspeed = player_yspeed = 0;
+  player_spin_jump_flag = 0;
+  player_riding_yoshi_flag = 0;
+  for (int k = 0; k < SprNumSlots(); k++)  // drop anything carried
+    if (SPR(spr_current_status, k) == 0x0B && cs->carry_owner[k] == 0)
+      SPR(spr_current_status, k) = 9;
+  player_carrying_something_flag1 = player_carrying_something_flag2 = 0;
+  io_sound_ch1 = 0x04;
+  return true;
+}
+
+static void UpdateMainBubble(void) {
+  CoopState *cs = Coop();
+  int bx = (int16)cs->main_bubble_x, by = (int16)cs->main_bubble_y, tx, ty;
+  if (!NearestLivingPlayer(bx, by, 0, &tx, &ty)) {
+    // Nobody left: the original death (and level restart) happens now.
+    cs->main_bubble = 0;
+    player_current_state = 0;
+    g_allow_main_death = true;
+    DamagePlayer_Kill();
+    g_allow_main_death = false;
+    return;
+  }
+  ty -= 24;
+  bx += Clamp(tx - bx, -kBubbleSpeed, kBubbleSpeed);
+  by += Clamp(ty - by, -kBubbleSpeed, kBubbleSpeed);
+  cs->main_bubble_x = bx, cs->main_bubble_y = by;
+  if (cs->main_bubble < 255)
+    cs->main_bubble++;
+  // The main player (and so the camera) rides the bubble
+  player_xpos = bx, player_ypos = by;
+  player_xspeed = player_yspeed = 0;
+  player_current_state = 0x0D;
+  bool close = abs(tx - bx) < 24 && abs(ty - by) < 28;
+  if (cs->main_bubble >= kBubbleMinFrames && close &&
+      (((io_controller_press1 | io_controller_press2) & 0xC0) || cs->main_bubble >= kBubbleAutoPop)) {
+    cs->main_bubble = 0;
+    player_current_state = 0;
+    player_yspeed = 0xD0;  // small hop out of the bubble
+    player_in_air_flag = 0x0B;
+    timer_player_hurt = kJoinFlash;
+    io_sound_ch1 = 0x01;
+  }
+}
+
 void Coop_UpdateExtraPlayers(void) {
   CoopState *cs = Coop();
   if (!g_coop_enabled || flag_two_player_game || misc_game_mode != 0x14) {
     memset(cs->active, 0, sizeof(cs->active));
     memset(cs->bubble, 0, sizeof(cs->bubble));
+    if (cs->main_bubble && player_current_state == 0x0D)
+      player_current_state = 0;
+    cs->main_bubble = 0;
     return;
   }
+  if (cs->main_bubble)
+    UpdateMainBubble();
   if (cs->respawn_pending) {
     cs->respawn_pending = 0;
+    if (cs->main_bubble && player_current_state == 0x0D)
+      player_current_state = 0;
+    cs->main_bubble = 0;
     for (int p = 1; p < kCoopMaxPlayers; p++)
       if (cs->active[p])
         cs->bubble[p] = 0, SpawnAtMainPlayer(p, kJoinFlash);
@@ -469,6 +582,12 @@ void Coop_DrawOverlay(uint8 *pixels, int pitch, int width, int height) {
   if (!g_coop_enabled || (mode != 0x13 && mode != 0x14 && mode != 0x15))
     return;
   int margin = (width - 256) / 2;
+  if (cs->main_bubble) {
+    // The game draws the main player; add the bubble around them
+    int cx = (int16)(player_xpos - mirror_current_layer1_xpos) + margin + 8;
+    int cy = (int16)(player_ypos - mirror_current_layer1_ypos) + 20 + ((cs->main_bubble >> 3) & 1);
+    DrawBubble(pixels, pitch, width, height, cx, cy, 16);
+  }
   for (int p = 1; p < kCoopMaxPlayers; p++) {
     if (!cs->active[p])
       continue;

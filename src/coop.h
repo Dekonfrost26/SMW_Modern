@@ -44,4 +44,9 @@ void Coop_BeginSpriteFrame(void);
 // position; current_copy picks the D1/D3 copy instead of 94/96. Returns the
 // main player's value when no extra player is nearer (or while an extra
 // player's own state is swapped in).
+// Phase 4: when the main player would die while another player is still
+// alive, they go into a bubble instead and the level continues. Returns true
+// if that happened (the caller skips the death). Called from DamagePlayer_PitFall.
+bool Coop_TryBubbleMainPlayer(void);
+
 uint16 Coop_NearestPlayerPos(uint16 sx, uint16 sy, uint16 main_x, uint16 main_y, bool current_copy, bool want_y);

@@ -6187,6 +6187,8 @@ void DamagePlayer_Kill() {  // 00f606
 }
 
 void DamagePlayer_PitFall() {  // 00f60a
+  if (Coop_TryBubbleMainPlayer())
+    return;  // co-op: another player is still alive, keep the level going
   io_music_ch1 = 9;
   misc_music_register_backup = -1;
   player_current_state = 9;

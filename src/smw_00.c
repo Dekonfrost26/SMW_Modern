@@ -641,6 +641,7 @@ void InitializeFirst8KBOfRAM() {  // 008a4e
       v0 -= 2;
     while ((int16)(v0 - 511) < 0 && (int16)(v0 - 256) >= 0);
   } while (v0 != 0xFFFE);
+  SprExtClear(0, kRamExtSize);  // RAM extension (sprite slots 12+)
   stripe_image_upload = 0;
   *(uint16 *)&palettes_dynamic_palette_upload_index = 0;
   stripe_image_upload_data[0] = -1;
@@ -2213,6 +2214,9 @@ void ClearOverworldAndCutsceneRAM() {  // 00a1a6
     *((uint8 *)&mirror_current_layer1_xpos + (uint16)i) = 0;
   for (int16 j = 0x7ce; j >= 0; --j)
     *(&timer_prevent_pause + (uint16)j) = 0;
+  // Same ranges for sprite slots 12+ in the RAM extension
+  SprExtClear(0x1A, 190);
+  SprExtClear(0x13D3, 0x7CF);
 }
 
 void GameMode0E_ShowOverworld() {  // 00a1be

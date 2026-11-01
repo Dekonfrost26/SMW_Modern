@@ -10,6 +10,11 @@ static inline uint8 *SprSlotPtr(uint8 *base, int k) {
   return (k < 12 || !g_more_sprite_slots) ? base + k : base + kSnesRamSize + (k - 12);
 }
 #define SPR(tbl, k) (*SprSlotPtr((tbl), (k)))
+enum { kSprSlotsOriginal = 12, kSprSlotsMax = 24 };
+// Number of normal sprite slots in use (12 originally).
+static inline int SprNumSlots(void) { return g_more_sprite_slots ? kSprSlotsMax : kSprSlotsOriginal; }
+// Clears the RAM extension shadow of SNES RAM range [addr, addr + len).
+static inline void SprExtClear(uint32 addr, uint32 len) { memset(g_ram + kSnesRamSize + addr, 0, len); }
 #endif
 
 //#define r0w (*(uint16*)(g_ram+0x0))

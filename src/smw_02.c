@@ -3264,7 +3264,7 @@ void InitializeAllSpritesOnLevelLoad() {  // 02abf2
   for (int8 i = 63; i >= 0; --i)
     sprites_load_status[(uint8)i] = 0;
   uint8 r0 = -1;
-  for (uint8 j = 11; (j & 0x80) == 0; --j) {
+  for (int j = SprNumSlots() - 1; j >= 0; --j) {
     SPR(spr_load_status_table_index, j) = -1;
     if (SPR(spr_current_status, j) == 11)
       r0 = j;
@@ -3284,6 +3284,7 @@ void InitializeAllSpritesOnLevelLoad() {  // 02abf2
   }
   for (int16 k = 634; k >= 0; --k)
     *(&blocks_currently_processed_map16_tile_lo + (uint16)k) = 0;
+  SprExtClear(0x1693, 635);  // same range for sprite slots 12+
   l1_l2_scroll_spr_spriteid[0] = 0;
   l1_l2_scroll_spr_spriteid[1] = 0;
 }

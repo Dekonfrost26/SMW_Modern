@@ -3,6 +3,16 @@
 #include "smw_rtl.h"
 #include "variables.h"
 
+// Widescreen helpers. With g_ws_margin == 0 callers keep the original tests.
+// True if a relative X is inside [lo, hi) widened by the margin on both sides.
+static inline bool WsInView(int rel, int lo, int hi) {
+  return rel >= lo - g_ws_margin && rel < hi + g_ws_margin;
+}
+// OAM X bit 8 for a relative X (set for the left margin and past x=255).
+static inline uint8 WsXHigh(int rel) {
+  return g_ws_margin ? (uint8)((rel >> 8) & 1) : 0;
+}
+
 void (*kProcessMinorExtendedSprites_MinorExtendedSpritesPtrs[12])(uint8 k) = {
     &ProcessMinorExtendedSprites_Return, &MExtSpr01_BrickPiece,  &MExtSpr02_SmallStar,   &MExtSpr03_EggShell,
     &MExtSpr04_PodobooFire,         &MExtSpr02_SmallStar,   &MExtSpr06_RipVanFishZ, &MExtSpr07_WaterSplash,
@@ -1448,7 +1458,8 @@ void MExtSpr01_BrickPiece(uint8 k) {  // 028f8b
 
   uint16 tx = PAIR16(mextspr_xpos_hi[k], mextspr_xpos_lo[k]) - mirror_current_layer1_xpos;
   uint8 r1 = tx;
-  if ((tx >> 8) || (oam = get_OamEnt(oam_buf, v8), oam->xpos = tx, r0 >= 0xF0)) {
+  bool x_out = g_ws_margin ? !WsInView((int16)tx, 0, 256) : (tx >> 8) != 0;
+  if (x_out || (oam = get_OamEnt(oam_buf, v8), oam->xpos = tx, r0 >= 0xF0)) {
 LABEL_15:
     MExtSpr_Delete(k);
     return;
@@ -1461,7 +1472,7 @@ LABEL_15:
   if (v13)
     v12 = counter_global_frames & 0xE;
   oam->flags = sprites_tile_priority | kMExtSpr01_BrickPiece_Flip[v11] ^ v12;
-  sprites_oamtile_size_buffer[v8 >> 2] = 0;
+  sprites_oamtile_size_buffer[v8 >> 2] = WsXHigh((int16)tx);
 }
 
 void ProcessBounceAndSmokeSprites() {  // 02902d
@@ -1595,8 +1606,9 @@ void BounceSpriteDraw(uint8 k) {  // 0291f8
   uint8 r3 = *((uint8 *)&mirror_current_layer1_xpos + v1);
   uint8 r4 = *((uint8 *)&mirror_current_layer1_ypos + v1 + 1);
   uint8 r5 = *((uint8 *)&mirror_current_layer1_xpos + v1 + 1);
-  if (bounce_spr_ypos_hi[k] == (uint8)((bounce_spr_ypos_lo[k] < r2) + r4) &&
-      bounce_spr_xpos_hi[k] == (uint8)((bounce_spr_xpos_lo[k] < r3) + r5)) {
+  int relx = (int16)(PAIR16(bounce_spr_xpos_hi[k], bounce_spr_xpos_lo[k]) - PAIR16(r5, r3));
+  bool x_ok = g_ws_margin ? WsInView(relx, 0, 256) : bounce_spr_xpos_hi[k] == (uint8)((bounce_spr_xpos_lo[k] < r3) + r5);
+  if (bounce_spr_ypos_hi[k] == (uint8)((bounce_spr_ypos_lo[k] < r2) + r4) && x_ok) {
     uint8 v2 = kBounceSpriteGFXRt_OAMIndex[k];
     uint8 r1 = bounce_spr_ypos_lo[k] - r2;
     OamEnt *oam = get_OamEnt(oam_buf, v2);
@@ -1605,7 +1617,7 @@ void BounceSpriteDraw(uint8 k) {  // 0291f8
     oam->xpos = r0;
     oam->flags = sprites_tile_priority | bounce_spr_yxppccct[k];
     oam->charnum = kBounceSpriteGFXRt_Tiles[bounce_spr_spriteid[k] - 1];
-    sprites_oamtile_size_buffer[v2 >> 2] = 2;
+    sprites_oamtile_size_buffer[v2 >> 2] = 2 | WsXHigh(relx);
   }
 }
 
@@ -2509,7 +2521,9 @@ void ExtSpr05_MarioFireball_02A04F(uint8 k) {  // 02a04f
 
   uint8 v1 = kExtSpr05_MarioFireball_DATA_029FA2[k + 3];
   uint8 r0 = (uint8)(ext_spr_xspeed[k] & 0x80) >> 1;
-  if ((uint8)(ext_spr_xpos_lo[k] - mirror_current_layer1_xpos) >= 0xF8 ||
+  int relx = (int16)(PAIR16(ext_spr_xpos_hi[k], ext_spr_xpos_lo[k]) - mirror_current_layer1_xpos);
+  bool x_out = g_ws_margin ? !WsInView(relx, 0, 0xF8) : (uint8)relx >= 0xF8;
+  if (x_out ||
       (oam = get_OamEnt(oam_buf, v1), oam[64].xpos = ext_spr_xpos_lo[k] - mirror_current_layer1_xpos,
        (uint8)(ext_spr_ypos_lo[k] - mirror_current_layer1_ypos) >= 0xF0)) {
     EraseExtSprite(k);
@@ -2522,7 +2536,7 @@ void ExtSpr05_MarioFireball_02A04F(uint8 k) {  // 02a04f
     oam[64].flags = v4;
     if (r1)
       oam[64].flags = v4 & 0xCF | 0x10;
-    sprites_oamtile_size_buffer[(v1 >> 2) + 64] = 0;
+    sprites_oamtile_size_buffer[(v1 >> 2) + 64] = WsXHigh(relx);
   }
 }
 
@@ -2601,7 +2615,10 @@ uint8 GenericExtendedSpriteGFXRt_FireballEntry(uint8 k, uint8 j) {  // 02a1a7
   uint8 r0 = (uint8)(ext_spr_xspeed[k] & 0x80 ^ 0x80) >> 1;
   uint8 v2 = ext_spr_xpos_lo[k];
   uint8 r1 = v2 - mirror_current_layer1_xpos;
-  if (ext_spr_xpos_hi[k] == (uint8)((v2 < (uint8)mirror_current_layer1_xpos) + HIBYTE(mirror_current_layer1_xpos)) &&
+  int relx = (int16)(PAIR16(ext_spr_xpos_hi[k], v2) - mirror_current_layer1_xpos);
+  bool x_ok = g_ws_margin ? WsInView(relx, 0, 256) :
+      ext_spr_xpos_hi[k] == (uint8)((v2 < (uint8)mirror_current_layer1_xpos) + HIBYTE(mirror_current_layer1_xpos));
+  if (x_ok &&
       (v3 = ext_spr_ypos_lo[k], r2 = v3 - mirror_current_layer1_ypos,
        ext_spr_ypos_hi[k] == (uint8)((v3 < (uint8)mirror_current_layer1_ypos) + HIBYTE(mirror_current_layer1_ypos))) &&
       r2 < 0xF0) {
@@ -2615,7 +2632,7 @@ uint8 GenericExtendedSpriteGFXRt_FireballEntry(uint8 k, uint8 j) {  // 02a1a7
     oam->flags = v6;
     if (r1)
       oam->flags = v6 & 0xCF | 0x10;
-    sprites_oamtile_size_buffer[j >> 2] = 0;
+    sprites_oamtile_size_buffer[j >> 2] = WsXHigh(relx);
   } else {
     EraseExtSprite(k);
   }
@@ -3400,7 +3417,8 @@ LABEL_15:;
   uint16 r4w = *(uint16 *)((char *)&mirror_current_layer1_xpos + v10);
   uint16 xpos = PAIR16(score_spr_xpos_hi[k], score_spr_xpos_lo[k]) - r4w;
   uint16 ypos = PAIR16(score_spr_ypos_hi[k], score_spr_ypos_lo[k]) - r2w;
-  if (!((uint16)(xpos + 12) >> 8) && !(xpos >> 8) && !(ypos >> 8)) {
+  bool x_ok = g_ws_margin ? WsInView((int16)xpos, 0, 0xF4) : !((uint16)(xpos + 12) >> 8) && !(xpos >> 8);
+  if (x_ok && !(ypos >> 8)) {
     uint8 v11 = kProcessScoreSprites_OAMIndex[k];
     if ((misc_nmito_use_flag & 0x40) != 0)
       v11 = 4;
@@ -3426,15 +3444,15 @@ LABEL_15:;
     v20->flags = v19;
     v20[1].flags = v19;
     uint8 v21 = v24 >> 2;
-    sprites_oamtile_size_buffer[v21] = 0;
-    sprites_oamtile_size_buffer[v21 + 1] = 0;
+    sprites_oamtile_size_buffer[v21] = WsXHigh((int16)xpos);
+    sprites_oamtile_size_buffer[v21 + 1] = WsXHigh((int16)xpos + 8);
     if (score_spr_spriteid[v16] >= 0x11) {
       OamEnt *v22 = get_OamEnt(oam_buf, 0x4C);
       v22->xpos = score_spr_xpos_lo[v16] - r4w - 8;
       v22->ypos = score_spr_ypos_lo[v16] - r2w;
       v22->charnum = 95;
       v22->flags = 52;
-      sprites_oamtile_size_buffer[19] = 0;
+      sprites_oamtile_size_buffer[19] = WsXHigh((int16)xpos - 8);
     }
   }
 }

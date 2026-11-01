@@ -79,13 +79,6 @@ static CoopState *Coop(void) {
   return (CoopState *)(g_ram + kSnesRamSize + kRamCoopOffset);
 }
 
-static int RangesSize(const RamRange *r, int n) {
-  int s = 0;
-  for (int i = 0; i < n; i++)
-    s += r[i].len;
-  return s;
-}
-
 static void SaveRanges(const RamRange *r, int n, uint8 *dst) {
   for (int i = 0; i < n; i++, dst += r[i - 1].len)
     memcpy(dst, g_ram + r[i].addr, r[i].len);
